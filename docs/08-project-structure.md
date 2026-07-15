@@ -37,6 +37,7 @@ yomirai/
 ├── docs/
 │   ├── adr/                    # Architecture decision records
 │   ├── design/                 # Visual direction, design system, motion, and screen specs
+│   ├── implementation/         # Executable MVP stages, dependencies, and release gates
 │   └── *.md                    # Product and system documentation
 ├── tooling/
 │   ├── eslint/
