@@ -32,6 +32,7 @@ Visual views are the expression of those capabilities, not a third data system. 
 | [Quality and security](docs/06-security-reliability-evals.md) | Permissions, prompt-injection defenses, observability, and evals |
 | [Delivery roadmap](docs/07-roadmap.md) | Phases, vertical slices, acceptance criteria, and deferred work |
 | [Project structure](docs/08-project-structure.md) | Proposed monorepo layout and module ownership |
+| [UI/UX design system](docs/design/) | Premium Japanese-inspired visual direction, components, motion, and screen specifications |
 | [Architecture decisions](docs/adr/) | Durable technical decisions and their trade-offs |
 
 ## Architecture at a glance

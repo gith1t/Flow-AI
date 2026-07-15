@@ -36,6 +36,7 @@ yomirai/
 │   └── reports/                # Generated locally/CI; usually gitignored
 ├── docs/
 │   ├── adr/                    # Architecture decision records
+│   ├── design/                 # Visual direction, design system, motion, and screen specs
 │   └── *.md                    # Product and system documentation
 ├── tooling/
 │   ├── eslint/
