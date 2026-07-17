@@ -76,6 +76,44 @@ export default function App() {
     }
   }
 
+  async function handleAcceptHypothesis() {
+    if (!draft?.proposed_hypothesis) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const r = await fetch(`${API}/api/socratic/commit`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(draft.proposed_hypothesis),
+      });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      setDraft(null);
+      await loadWorkspace();
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function renderHypothesis(hypothesis) {
+    if (!hypothesis) return null;
+    return (
+      <div className="mt-2">
+        <div className="font-medium">{hypothesis.title}</div>
+        <div className="text-xs text-slate-400">{hypothesis.details}</div>
+        <div className="text-xs text-amber-300 mt-1">
+          Confidence: {hypothesis.confidence_score}
+        </div>
+        {hypothesis.evidence && (
+          <p className="mt-1 text-xs italic text-slate-300">
+            &ldquo;{hypothesis.evidence}&rdquo;
+          </p>
+        )}
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-slate-900 text-slate-100 p-6">
       <h1 className="text-2xl font-bold mb-4">Yomirai — Flow-AI Research IDE</h1>
@@ -153,8 +191,10 @@ export default function App() {
       )}
 
       {draft && (
-        <div className="mt-4 bg-slate-800 p-4 rounded-lg">
-          <h2 className="font-semibold mb-2">Socratic Draft (Context Git)</h2>
+        <div className="mt-4 bg-yellow-900/40 border border-yellow-700 p-4 rounded-lg">
+          <h2 className="font-semibold mb-2 text-yellow-300">
+            Draft Branch (Context Git)
+          </h2>
           <p className="text-sm">
             <span className="text-rose-400">Gap:</span> {draft.identified_gap}
           </p>
@@ -163,11 +203,14 @@ export default function App() {
               <li key={i}>{q}</li>
             ))}
           </ul>
-          <p className="text-sm">
-            <span className="text-emerald-400">Hypothesis:</span>{" "}
-            {draft.proposed_hypothesis?.title} (conf:{" "}
-            {draft.proposed_hypothesis?.confidence_score})
-          </p>
+          {renderHypothesis(draft.proposed_hypothesis)}
+          <button
+            className="mt-3 bg-emerald-600 hover:bg-emerald-500 px-3 py-2 rounded text-sm font-medium disabled:opacity-50"
+            onClick={handleAcceptHypothesis}
+            disabled={busy}
+          >
+            Accept &amp; Merge Hypothesis
+          </button>
         </div>
       )}
 
