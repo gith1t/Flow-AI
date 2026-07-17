@@ -60,11 +60,18 @@ class ProposedHypothesis(BaseModel):
     title: str
     details: str
     confidence_score: int
+    evidence: str
 
 class SocraticDraft(BaseModel):
     identified_gap: str
     socratic_questions: List[str]
     proposed_hypothesis: ProposedHypothesis
+
+class HypothesisCommitRequest(BaseModel):
+    title: str
+    details: str
+    confidence_score: int
+    evidence: str
 
 # --- STATE MANAGEMENT ---
 STATE_FILE = "workspace_state.json"
@@ -218,6 +225,8 @@ async def socratic_review():
         "Ти — Socratic Co-Pilot. Проаналізуй поточну базу знань (findings) та пропозиції (proposals). "
         "Знайди логічні розриви (Gaps) або суперечності. Сформулюй 2-3 Сократичні запитання для вирішення "
         "цього розриву і запропонуй нову картку-гіпотезу для заповнення цієї прогалини. "
+        "Твоя гіпотеза ПОВИННА супроводжуватися точною цитатою-доказом (evidence) з існуючих фактів (findings), "
+        "щоб уникнути галюцинацій. Не вигадуй доказів, яких немає у findings. "
         "Відповідь має суворо відповідати JSON-схемі SocraticDraft.\\n"
         "{\\n"
         '  "identified_gap": "Опис логічного розриву або конфлікту між поточними картками",\\n'
@@ -225,6 +234,7 @@ async def socratic_review():
         '  "proposed_hypothesis": {\\n'
         '    "title": "Коротка назва гіпотези",\\n'
         '    "details": "Детальне пояснення гіпотези, що заповнює прогалину",\\n'
+        '    "evidence": "ТОЧНА цитата-доказ з існуючого факту (finding)",\\n'
         '    "confidence_score": 70\\n'
         "  }\\n"
         "}\\n"
@@ -261,6 +271,32 @@ async def socratic_review():
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Socratic Monitor Error: {str(e)}")
+
+@app.post("/api/socratic/commit")
+async def socratic_commit(payload: HypothesisCommitRequest):
+    state = load_state()
+    finding = {
+        "id": f"hyp_{datetime.utcnow().strftime('%Y%m%d%H%M%S')}_{len(state.get('findings', []))}",
+        "title": payload.title,
+        "status": "Verified",
+        "details": payload.details,
+        "commit_state": {
+            "revision": len(state.get("findings", [])) + 1,
+            "workspace": "Committed",
+            "updated_at": datetime.utcnow().isoformat(),
+        },
+        "evidence": [
+            {
+                "id": f"ev_{datetime.utcnow().strftime('%Y%m%d%H%M%S')}",
+                "title": "Socratic hypothesis evidence",
+                "quote": payload.evidence,
+            }
+        ],
+        "relations": [],
+    }
+    state.setdefault("findings", []).append(finding)
+    save_state(state)
+    return {"status": "success", "committed_finding": finding}
 
 if __name__ == "__main__":
     import uvicorn
