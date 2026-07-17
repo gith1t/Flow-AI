@@ -11,8 +11,9 @@ from dotenv import load_dotenv
 
 app = FastAPI(title="Yomirai Backend Engine")
 
-# Завантажує змінні з .env (OPENAI_API_KEY) у середовище процесу
-load_dotenv()
+# Завантажує змінні з .env, що лежить на рівень вище проєкту (поза репозиторієм -> не потрапить у git)
+# backend/main.py -> ../../.env == C:\Users\Gitpc\OneDrive\Документы\.env
+load_dotenv(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", ".env"))
 
 # CORS setup
 app.add_middleware(
