@@ -55,6 +55,16 @@ class ResearchRequest(BaseModel):
     query: str
     text: str
 
+class ProposedHypothesis(BaseModel):
+    title: str
+    details: str
+    confidence_score: int
+
+class SocraticDraft(BaseModel):
+    identified_gap: str
+    socratic_questions: List[str]
+    proposed_hypothesis: ProposedHypothesis
+
 # --- STATE MANAGEMENT ---
 STATE_FILE = "workspace_state.json"
 
@@ -186,42 +196,50 @@ async def commit_proposal(proposal_id: str):
 async def socratic_review():
     state = load_state()
     findings = state.get("findings", [])
-    
-    if not findings:
-        return {"clashes": []}
-        
+    proposals = state.get("proposals", [])
+
+    if not findings and not proposals:
+        empty = SocraticDraft(
+            identified_gap="Workspace is empty — no findings or proposals to analyze yet.",
+            socratic_questions=[
+                "What primary source or claim should we anchor the first finding on?",
+                "Which research question would make the highest-value starting hypothesis?",
+            ],
+            proposed_hypothesis=ProposedHypothesis(
+                title="Seed the workspace with an initial finding",
+                details="Run a research pass on a concrete query to populate the knowledge base before Socratic analysis.",
+                confidence_score=0,
+            ),
+        )
+        return empty
+
     system_prompt = (
-        "You are a Socratic AI co-pilot. Your job is to review the current committed findings "
-        "and detect logical gaps, conflicts, or contradictions (Clashes) based on classical Greek epic lore. "
-        "Return a valid JSON object in this format:\n"
-        "{\n"
-        '  "clashes": [\n'
-        "    {\n"
-        '      "id": "clash_1",\n'
-        '      "title": "Title of the clash/contradiction",\n'
-        '      "status": "Clash",\n'
-        '      "details": "Explanation of why these findings conflict or what critical piece is missing.",\n'
-        '      "commit_state": {\n'
-        '        "revision": 1,\n'
-        '        "workspace": "Proposal",\n'
-        '        "updated_at": "timestamp"\n'
-        "      },\n"
-        '      "evidence": [],\n'
-        '      "relations": [\n'
-        '        {"target_id": "id_of_conflicting_finding", "type": "contradicts"}\n'
-        "      ]\n"
-        "    }\n"
-        "  ]\n"
-        "}\n"
-        "If no clashes are found, return empty list: {\"clashes\": []}."
+        "Ти — Socratic Co-Pilot. Проаналізуй поточну базу знань (findings) та пропозиції (proposals). "
+        "Знайди логічні розриви (Gaps) або суперечності. Сформулюй 2-3 Сократичні запитання для вирішення "
+        "цього розриву і запропонуй нову картку-гіпотезу для заповнення цієї прогалини. "
+        "Відповідь має суворо відповідати JSON-схемі SocraticDraft.\\n"
+        "{\\n"
+        '  "identified_gap": "Опис логічного розриву або конфлікту між поточними картками",\\n'
+        '  "socratic_questions": ["Запитання 1", "Запитання 2", "Запитання 3"],\\n'
+        '  "proposed_hypothesis": {\\n'
+        '    "title": "Коротка назва гіпотези",\\n'
+        '    "details": "Детальне пояснення гіпотези, що заповнює прогалину",\\n'
+        '    "confidence_score": 70\\n'
+        "  }\\n"
+        "}\\n"
+        "confidence_score має бути цілим числом від 0 до 100."
     )
-    
-    user_content = f"Current findings:\n{json.dumps(findings, ensure_ascii=False)}"
-    
+
+    user_content = (
+        f"Current findings:\\n{json.dumps(findings, ensure_ascii=False)}\\n\\n"
+        f"Current proposals:\\n{json.dumps(proposals, ensure_ascii=False)}"
+    )
+
     try:
+        print(">>> Відправляємо стан в OpenAI (Socratic Co-Pilot)...")
         try:
             response = client.chat.completions.create(
-                model="gpt-4o-mini",
+                model="gpt-4o",
                 messages=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_content}
@@ -231,18 +249,15 @@ async def socratic_review():
         except Exception as e:
             print(f"❌ КРИТИЧНА ПОМИЛКА OPENAI API: {e}")
             raise e
-        
 
-        result_data = json.loads(extract_json(response.choices[0].message.content))
-        clashes = result_data.get("clashes", [])
-        
-        for clash in clashes:
-            clash["commit_state"]["updated_at"] = datetime.utcnow().isoformat()
-            state["proposals"].append(clash)
-            
-        save_state(state)
-        return {"clashes": clashes}
-        
+        raw_content = response.choices[0].message.content
+        print(f">>> Отримано сиру відповідь: {raw_content[:200]}...")
+
+        result_data = json.loads(extract_json(raw_content))
+        # Draft не зберігаємо у файл — це лише пропозиція (Context Git draft branch)
+        draft = SocraticDraft(**result_data)
+        return draft
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Socratic Monitor Error: {str(e)}")
 
