@@ -197,8 +197,10 @@ function TopBar({
   setActiveMode,
   layoutMode,
   setLayoutMode,
+  onLayoutChange,
   onOpenIngest,
   onRunCopilot,
+  onMagicLayout,
   onDownloadReport,
   isReviewing,
   error,
@@ -208,6 +210,23 @@ function TopBar({
     { id: "review", label: "◉ Review" },
     { id: "magic", label: "✦ Magic" },
   ];
+
+  const handleModeChange = (mode) => {
+    setActiveMode(mode);
+
+    if (mode === "review") {
+      onRunCopilot();
+    }
+
+    if (mode === "magic") {
+      onMagicLayout();
+    }
+  };
+
+  const changeLayout = (mode) => {
+    setLayoutMode(mode);
+    onLayoutChange(mode);
+  };
 
   return (
     <header className="border-b border-slate-800 bg-[#0B1120]/95 px-4 py-3 backdrop-blur-xl sm:px-6">
@@ -241,7 +260,7 @@ function TopBar({
               <button
                 key={mode.id}
                 type="button"
-                onClick={() => setActiveMode(mode.id)}
+                onClick={() => handleModeChange(mode.id)}
                 className={`rounded-lg px-3 py-2 text-xs font-bold transition ${
                   activeMode === mode.id
                     ? "border border-slate-600 bg-slate-800 text-cyan-300 shadow-inner"
@@ -260,7 +279,7 @@ function TopBar({
           >
             <button
               type="button"
-              onClick={() => setLayoutMode("graph")}
+              onClick={() => changeLayout("graph")}
               className={`rounded-md px-2.5 py-1 text-[11px] font-bold transition ${
                 layoutMode === "graph"
                   ? "bg-cyan-400 text-slate-950"
@@ -271,7 +290,7 @@ function TopBar({
             </button>
             <button
               type="button"
-              onClick={() => setLayoutMode("tree")}
+              onClick={() => changeLayout("tree")}
               className={`rounded-md px-2.5 py-1 text-[11px] font-bold transition ${
                 layoutMode === "tree"
                   ? "bg-cyan-400 text-slate-950"
@@ -321,6 +340,27 @@ function IngestResearchModal({
   onClose,
   spotlightInputRef,
 }) {
+  const handleFileUpload = (event) => {
+    const file = event.target.files?.[0];
+
+    if (!file) return;
+
+    const reader = new FileReader();
+
+    reader.onload = () => {
+      const uploadedText = typeof reader.result === "string" ? reader.result : "";
+
+      setText((currentText) =>
+        currentText.trim()
+          ? `${currentText.trim()}\n\n${uploadedText}`
+          : uploadedText
+      );
+      event.target.value = "";
+    };
+
+    reader.readAsText(file);
+  };
+
   if (!isOpen) return null;
 
   return (
@@ -379,6 +419,22 @@ function IngestResearchModal({
               onChange={(event) => setText(event.target.value)}
               placeholder="Paste source material, notes, transcripts, or evidence..."
               className="mt-2 min-h-52 w-full resize-y rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-sm leading-6 text-slate-100 outline-none transition placeholder:text-slate-600 focus:border-cyan-400 focus:ring-2 focus:ring-cyan-400/20"
+            />
+          </label>
+
+          <label className="block rounded-xl border border-dashed border-cyan-400/35 bg-cyan-400/5 p-3 transition hover:border-cyan-400/70 hover:bg-cyan-400/10">
+            <span className="block text-xs font-extrabold uppercase tracking-[0.16em] text-cyan-300">
+              Import source file
+            </span>
+            <span className="mt-1 block text-xs leading-5 text-slate-500">
+              TXT, Markdown, CSV or JSON. The extracted text is appended to the document.
+            </span>
+            <input
+              type="file"
+              accept=".txt,.md,.csv,.json"
+              onChange={handleFileUpload}
+              disabled={isAnalyzing}
+              className="mt-3 block w-full cursor-pointer rounded-lg border border-slate-700 bg-slate-950 text-xs text-slate-400 file:mr-3 file:cursor-pointer file:border-0 file:bg-cyan-400 file:px-3 file:py-2 file:text-xs file:font-extrabold file:text-slate-950 hover:file:bg-cyan-300 disabled:cursor-not-allowed disabled:opacity-60"
             />
           </label>
         </div>
@@ -529,7 +585,7 @@ export default function App() {
     }
   }, [findings.length, isLoadingWorkspace, rootNode]);
 
-  const handleResearch = async () => {
+  const handleResearch = useCallback(async () => {
     if (!query.trim() || !text.trim()) {
       setError("Заповніть Active Query та Research Document перед аналізом.");
       return;
@@ -571,7 +627,7 @@ export default function App() {
     } finally {
       setIsAnalyzing(false);
     }
-  };
+  }, [loadWorkspace, query, targetLang, text]);
 
   const handleProposalCommit = async (proposalId) => {
     try {
@@ -602,7 +658,7 @@ export default function App() {
     }
   };
 
-  const handleSocraticReview = async () => {
+  const handleSocraticReview = useCallback(async () => {
     try {
       setIsReviewing(true);
       setError("");
@@ -637,7 +693,7 @@ export default function App() {
     } finally {
       setIsReviewing(false);
     }
-  };
+  }, [findings, selectedItem, targetLang]);
 
   const handleSocraticCommit = useCallback(async () => {
     if (!socraticDraft?.proposed_hypothesis) return;
@@ -970,98 +1026,127 @@ export default function App() {
     setError("");
   }, [nodes, selectedNodeIds]);
 
-  const applyMagicLayout = useCallback(() => {
-    setNodes((currentNodes) => {
-      const nextPositions = new Map();
-      const rootNode = currentNodes.find((node) => node.type === "root");
-      const rootPosition =
-        layoutMode === "tree" ? { x: 520, y: 50 } : { x: 600, y: 360 };
+  const applyMagicLayout = useCallback(
+    (requestedLayoutMode = layoutMode) => {
+      const activeLayoutMode = requestedLayoutMode === "tree" ? "tree" : "graph";
 
-      if (rootNode) {
-        nextPositions.set(rootNode.id, rootPosition);
-      }
+      setNodes((currentNodes) => {
+        const nextPositions = new Map();
+        const rootNode = currentNodes.find((node) => node.type === "root");
+        const rootPosition = { x: 100, y: 50 };
 
-      const layoutTargets = currentNodes.filter(
-        (node) =>
-          node.type === "contextLayer" ||
-          (node.type === "fact" && !node.parentId)
-      );
-
-      layoutTargets.forEach((node, index) => {
-        if (layoutMode === "tree") {
-          nextPositions.set(node.id, {
-            x: 520,
-            y: 240 + index * 280,
-          });
-          return;
+        if (rootNode) {
+          nextPositions.set(rootNode.id, rootPosition);
         }
 
-        const angle =
-          -Math.PI / 2 + (Math.PI * 2 * index) / Math.max(layoutTargets.length, 1);
-        nextPositions.set(node.id, {
-          x: Math.round(rootPosition.x + Math.cos(angle) * 480),
-          y: Math.round(rootPosition.y + Math.sin(angle) * 300),
-        });
-      });
+        const topLevelNodes = currentNodes.filter(
+          (node) =>
+            node.type === "contextLayer" ||
+            (node.type === "fact" && !node.parentId)
+        );
 
-      const groupedFacts = new Map();
-      currentNodes
-        .filter((node) => node.type === "fact" && node.parentId)
-        .forEach((node) => {
-          const siblings = groupedFacts.get(node.parentId) || [];
-          siblings.push(node);
-          groupedFacts.set(node.parentId, siblings);
+        topLevelNodes.forEach((node, index) => {
+          let newX;
+          let newY;
+
+          if (activeLayoutMode === "tree") {
+            newX = 100;
+            newY = 250 + index * 250;
+          } else {
+            newX = 100 + (index % 3) * 350;
+            newY = 300 + Math.floor(index / 3) * 200;
+          }
+
+          if (isNaN(newX)) newX = 100;
+          if (isNaN(newY)) newY = 100;
+
+          nextPositions.set(node.id, { x: newX, y: newY });
         });
 
-      groupedFacts.forEach((siblings) => {
-        siblings.forEach((node, index) => {
-          nextPositions.set(node.id, {
-            x: 42 + (index % 2) * 270,
-            y: 82 + Math.floor(index / 2) * 165,
+        const groupedFacts = new Map();
+
+        currentNodes
+          .filter((node) => node.type === "fact" && node.parentId)
+          .forEach((node) => {
+            const siblings = groupedFacts.get(node.parentId) || [];
+            siblings.push(node);
+            groupedFacts.set(node.parentId, siblings);
+          });
+
+        groupedFacts.forEach((siblings) => {
+          siblings.forEach((node, index) => {
+            let newX = 42 + (index % 2) * 270;
+            let newY = 82 + Math.floor(index / 2) * 165;
+
+            if (isNaN(newX)) newX = 100;
+            if (isNaN(newY)) newY = 100;
+
+            nextPositions.set(node.id, { x: newX, y: newY });
           });
         });
-      });
 
-      const positionedNodes = currentNodes.map((node) => ({
-        ...node,
-        position: nextPositions.get(node.id) || node.position,
-      }));
+        const positionedNodes = currentNodes.map((node) => {
+          const position = nextPositions.get(node.id) || node.position || { x: 100, y: 100 };
+          let newX = Number(position.x);
+          let newY = Number(position.y);
 
-      const nodeById = new Map(positionedNodes.map((node) => [node.id, node]));
-      const getAbsolutePosition = (node) => {
-        const parent = node.parentId ? nodeById.get(node.parentId) : null;
+          if (isNaN(newX)) newX = 100;
+          if (isNaN(newY)) newY = 100;
 
-        return parent
-          ? {
-              x: parent.position.x + node.position.x,
-              y: parent.position.y + node.position.y,
-            }
-          : node.position;
-      };
+          return {
+            ...node,
+            position: { x: newX, y: newY },
+          };
+        });
 
-      return positionedNodes.map((node, index) => {
-        if (node.type !== "draft") return node;
+        const nodeById = new Map(positionedNodes.map((node) => [node.id, node]));
 
-        const target = draftTargetFindingId
-          ? nodeById.get(`finding-${draftTargetFindingId}`)
-          : null;
-        const targetPosition = target ? getAbsolutePosition(target) : null;
-        const graphOffset =
-          targetPosition && targetPosition.x < rootPosition.x ? -340 : 340;
+        const getAbsolutePosition = (node) => {
+          const parent = node.parentId ? nodeById.get(node.parentId) : null;
+          const nodeX = Number(node.position?.x);
+          const nodeY = Number(node.position?.y);
+          const parentX = Number(parent?.position?.x);
+          const parentY = Number(parent?.position?.y);
 
-        return {
-          ...node,
-          position: targetPosition
-            ? layoutMode === "tree"
-              ? { x: targetPosition.x + 390, y: targetPosition.y + 20 }
-              : { x: targetPosition.x + graphOffset, y: targetPosition.y + 40 }
-            : layoutMode === "tree"
-              ? { x: 910, y: 240 + index * 280 }
-              : { x: rootPosition.x + 520, y: rootPosition.y + 140 },
+          return {
+            x: (isNaN(nodeX) ? 100 : nodeX) + (parent ? (isNaN(parentX) ? 0 : parentX) : 0),
+            y: (isNaN(nodeY) ? 100 : nodeY) + (parent ? (isNaN(parentY) ? 0 : parentY) : 0),
+          };
         };
+
+        return positionedNodes.map((node, index) => {
+          if (node.type !== "draft") return node;
+
+          const target = draftTargetFindingId
+            ? nodeById.get(`finding-${draftTargetFindingId}`)
+            : null;
+          const targetPosition = target ? getAbsolutePosition(target) : null;
+          let newX;
+          let newY;
+
+          if (targetPosition) {
+            newX = targetPosition.x + 320;
+            newY = targetPosition.y + 20;
+          } else if (activeLayoutMode === "tree") {
+            newX = 450;
+            newY = 250 + index * 250;
+          } else {
+            newX = 100 + (index % 3) * 350;
+            newY = 300 + Math.floor(index / 3) * 200;
+          }
+
+          if (isNaN(newX)) newX = 100;
+          if (isNaN(newY)) newY = 100;
+
+          return {
+            ...node,
+            position: { x: newX, y: newY },
+          };
+        });
       });
-    });
-  }, [draftTargetFindingId, layoutMode, setNodes]);
+    },
+    [draftTargetFindingId, layoutMode, setNodes]
+  );
 
   const generateMarkdownReport = useCallback(() => {
     const verifiedFacts = nodes.filter(
@@ -1159,8 +1244,13 @@ export default function App() {
           setActiveMode={setActiveMode}
           layoutMode={layoutMode}
           setLayoutMode={setLayoutMode}
+          onLayoutChange={(mode) => {
+            setLayoutMode(mode);
+            applyMagicLayout(mode);
+          }}
           onOpenIngest={() => setIsIngestModalOpen(true)}
           onRunCopilot={handleSocraticReview}
+          onMagicLayout={() => applyMagicLayout()}
           onDownloadReport={generateMarkdownReport}
           isReviewing={isReviewing}
           error={error}
