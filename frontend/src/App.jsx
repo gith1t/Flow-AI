@@ -665,6 +665,121 @@ export default function App() {
     setError("");
   }, [nodes, selectedNodeIds]);
 
+  const applyMagicLayout = useCallback(() => {
+    setNodes((currentNodes) => {
+      const nextPositions = new Map();
+      const rootNode = currentNodes.find((node) => node.type === "root");
+
+      if (rootNode) {
+        nextPositions.set(rootNode.id, { x: 400, y: 50 });
+      }
+
+      const layoutTargets = currentNodes.filter(
+        (node) =>
+          node.type === "contextLayer" ||
+          (node.type === "fact" && !node.parentId)
+      );
+
+      layoutTargets.forEach((node, index) => {
+        nextPositions.set(node.id, {
+          x: 160 + (index % 2) * 740,
+          y: 220 + Math.floor(index / 2) * 320,
+        });
+      });
+
+      const groupedFacts = new Map();
+      currentNodes
+        .filter((node) => node.type === "fact" && node.parentId)
+        .forEach((node) => {
+          const siblings = groupedFacts.get(node.parentId) || [];
+          siblings.push(node);
+          groupedFacts.set(node.parentId, siblings);
+        });
+
+      groupedFacts.forEach((siblings) => {
+        siblings.forEach((node, index) => {
+          nextPositions.set(node.id, {
+            x: 42 + (index % 2) * 270,
+            y: 82 + Math.floor(index / 2) * 165,
+          });
+        });
+      });
+
+      const positionedNodes = currentNodes.map((node) => ({
+        ...node,
+        position: nextPositions.get(node.id) || node.position,
+      }));
+
+      const nodeById = new Map(positionedNodes.map((node) => [node.id, node]));
+      const getAbsolutePosition = (node) => {
+        const parent = node.parentId ? nodeById.get(node.parentId) : null;
+        return parent
+          ? {
+              x: parent.position.x + node.position.x,
+              y: parent.position.y + node.position.y,
+            }
+          : node.position;
+      };
+
+      return positionedNodes.map((node, index) => {
+        if (node.type !== "draft") return node;
+
+        const target = draftTargetFindingId
+          ? nodeById.get(`finding-${draftTargetFindingId}`)
+          : null;
+        const targetPosition = target ? getAbsolutePosition(target) : null;
+
+        return {
+          ...node,
+          position: targetPosition
+            ? { x: targetPosition.x + 320, y: targetPosition.y + 18 }
+            : {
+                x: 160 + (index % 2) * 740,
+                y: 220 + Math.floor(index / 2) * 320,
+              },
+        };
+      });
+    });
+  }, [draftTargetFindingId, setNodes]);
+
+  const generateMarkdownReport = useCallback(() => {
+    const verifiedFacts = nodes.filter(
+      (node) => node.type === "fact" && node.data?.finding
+    );
+
+    const report = [
+      "# Flow-AI Cyber Report",
+      "",
+      ...verifiedFacts.flatMap((node) => {
+        const finding = node.data.finding;
+        const evidence = Array.isArray(finding.evidence)
+          ? finding.evidence
+              .map((item) => item?.quote)
+              .filter(Boolean)
+              .join(" | ")
+          : finding.evidence;
+
+        return [
+          `## Finding: ${finding.title || "Untitled finding"}`,
+          `* **Analysis:** ${finding.summary || finding.details || "No analysis available."}`,
+          `* **Evidence:** "${evidence || "No evidence available."}"`,
+          "",
+        ];
+      }),
+    ].join("\n");
+
+    const blob = new Blob([report], { type: "text/markdown" });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+
+    anchor.href = url;
+    anchor.download = "FlowAI_Report.md";
+    document.body.appendChild(anchor);
+    anchor.click();
+    document.body.removeChild(anchor);
+    URL.revokeObjectURL(url);
+  }, [nodes]);
+
   const selectedEvidence = selectedItem
     ? getEvidence(selectedItem.item, selectedItem.kind === "draft")
     : [];
@@ -936,6 +1051,22 @@ export default function App() {
               >
                 {isReviewing ? "Co-Pilot thinking..." : "Запустити Context Co-Pilot"}
               </button>
+              <div className="mt-3 grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={applyMagicLayout}
+                  className="rounded-lg border border-cyan-400/60 bg-cyan-400/10 px-3 py-2.5 text-xs font-extrabold text-cyan-300 transition hover:bg-cyan-400 hover:text-slate-950"
+                >
+                  ⚡ Magic Layout
+                </button>
+                <button
+                  type="button"
+                  onClick={generateMarkdownReport}
+                  className="rounded-lg border border-violet-400/60 bg-violet-400/10 px-3 py-2.5 text-xs font-extrabold text-violet-300 transition hover:bg-violet-400 hover:text-slate-950"
+                >
+                  📥 Download Report
+                </button>
+              </div>
             </div>
 
             <div className="min-h-0 flex-1 overflow-y-auto p-4">

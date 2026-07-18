@@ -55,6 +55,10 @@ class Finding(BaseModel):
 class ResearchRequest(BaseModel):
     query: str
     text: str
+    target_lang: Optional[str] = "auto"
+
+class SocraticReviewRequest(BaseModel):
+    target_lang: Optional[str] = "auto"
 
 class ProposedHypothesis(BaseModel):
     title: str
@@ -137,7 +141,14 @@ async def start_research(payload: ResearchRequest):
         "Strictly avoid any markdown formatting. Return raw JSON."
         "CRITICAL REQUIREMENT: You MUST generate your response (titles, details, hypotheses, questions) IN THE EXACT SAME LANGUAGE as the provided Research Document or Workspace text."
     )
-    
+
+    if payload.target_lang and payload.target_lang != "auto":
+        system_prompt += (
+            f" OVERRIDE: The user explicitly requested the response language to be "
+            f"'{payload.target_lang}'. You MUST generate your response in {payload.target_lang}, "
+            f"regardless of the input text language."
+        )
+
     user_content = f"User Query: {payload.query}\n\nText to analyze:\n{payload.text}"
     
     try:
@@ -202,7 +213,9 @@ async def commit_proposal(proposal_id: str):
     return {"status": "success", "committed_finding": proposal}
 
 @app.post("/api/socratic/review")
-async def socratic_review():
+async def socratic_review(payload: SocraticReviewRequest = None):
+    if payload is None:
+        payload = SocraticReviewRequest()
     state = load_state()
     findings = state.get("findings", [])
     proposals = state.get("proposals", [])
@@ -218,6 +231,7 @@ async def socratic_review():
                 title="Seed the workspace with an initial finding",
                 details="Run a research pass on a concrete query to populate the knowledge base before Socratic analysis.",
                 confidence_score=0,
+                evidence="",
             ),
         )
         return empty
@@ -242,6 +256,13 @@ async def socratic_review():
         "confidence_score має бути цілим числом від 0 до 100."
         "CRITICAL REQUIREMENT: You MUST generate your response (titles, details, hypotheses, questions) IN THE EXACT SAME LANGUAGE as the provided Research Document or Workspace text."
     )
+
+    if payload.target_lang and payload.target_lang != "auto":
+        system_prompt += (
+            f" OVERRIDE: The user explicitly requested the response language to be "
+            f"'{payload.target_lang}'. You MUST generate your response in {payload.target_lang}, "
+            f"regardless of the input text language."
+        )
 
     user_content = (
         f"Current findings:\\n{json.dumps(findings, ensure_ascii=False)}\\n\\n"
