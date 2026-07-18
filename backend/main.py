@@ -1,6 +1,6 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, ConfigDict
 from typing import List, Optional, Dict, Any
 import json
 import os
@@ -59,6 +59,11 @@ class ResearchRequest(BaseModel):
 
 class SocraticReviewRequest(BaseModel):
     target_lang: Optional[str] = "auto"
+    fact_id: Optional[str] = None
+    fact_text: Optional[str] = None
+
+# Аліас згідно зі специфікацією (SocraticRequest === SocraticReviewRequest)
+SocraticRequest = SocraticReviewRequest
 
 class ProposedHypothesis(BaseModel):
     title: str
@@ -76,6 +81,15 @@ class HypothesisCommitRequest(BaseModel):
     details: str
     confidence_score: int
     evidence: str
+
+class WorkspaceState(BaseModel):
+    model_config = ConfigDict(extra="allow")
+    findings: List[Any] = []
+    proposals: List[Any] = []
+    suggested_layout: str = Field(
+        default="graph",
+        description="One of: graph, tree, timeline, comparison",
+    )
 
 # --- STATE MANAGEMENT ---
 STATE_FILE = "workspace_state.json"
@@ -104,7 +118,9 @@ def extract_json(text: str) -> str:
 # --- ENDPOINTS ---
 @app.get("/api/workspace")
 async def get_workspace():
-    return load_state()
+    state = load_state()
+    state.setdefault("suggested_layout", "graph")
+    return WorkspaceState.model_validate(state)
 
 @app.post("/api/research")
 async def start_research(payload: ResearchRequest):
@@ -256,6 +272,32 @@ async def socratic_review(payload: SocraticReviewRequest = None):
         "confidence_score має бути цілим числом від 0 до 100."
         "CRITICAL REQUIREMENT: You MUST generate your response (titles, details, hypotheses, questions) IN THE EXACT SAME LANGUAGE as the provided Research Document or Workspace text."
     )
+
+    # Прицілювання (Red Teaming) на конкретний факт
+    if payload.fact_text:
+        system_prompt = (
+            "You are an AI Red Teamer. Critique THIS SPECIFIC FACT: "
+            f"'{payload.fact_text}'. "
+            "Find logical gaps, hidden assumptions, missing evidence, or contradictions "
+            "between this fact and the rest of the knowledge base. "
+            "Formulate 2-3 Socratic questions to resolve these gaps and propose a hypothesis "
+            "card that fills the identified gap. "
+            "Your hypothesis MUST be backed by an exact evidence quote from existing facts (findings) "
+            "to avoid hallucinations. Do not invent evidence that is not in the findings. "
+            "Respond strictly in the JSON schema SocraticDraft.\\n"
+            "{\\n"
+            '  "identified_gap": "Description of the logical gap or conflict for THIS fact",\\n'
+            '  "socratic_questions": ["Question 1", "Question 2", "Question 3"],\\n'
+            '  "proposed_hypothesis": {\\n'
+            '    "title": "Short hypothesis name",\\n'
+            '    "details": "Detailed explanation of the hypothesis filling the gap",\\n'
+            '    "evidence": "EXACT evidence quote from an existing fact (finding)",\\n'
+            '    "confidence_score": 70\\n'
+            "  }\\n"
+            "}\\n"
+            "confidence_score must be an integer from 0 to 100."
+            "CRITICAL REQUIREMENT: You MUST generate your response (titles, details, hypotheses, questions) IN THE EXACT SAME LANGUAGE as the provided Research Document or Workspace text."
+        )
 
     if payload.target_lang and payload.target_lang != "auto":
         system_prompt += (
