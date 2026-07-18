@@ -144,10 +144,275 @@ const ContextLayerNode = memo(function ContextLayerNode({ data, selected }) {
   );
 });
 
+const RootNode = memo(function RootNode({ data, selected }) {
+  const openIngestion = (event) => {
+    event.stopPropagation();
+    data.onOpenIngest();
+  };
+
+  return (
+    <div
+      className={`min-w-72 rounded-2xl border bg-slate-900/95 p-4 shadow-2xl shadow-cyan-950/50 transition ${
+        selected
+          ? "border-cyan-300 ring-2 ring-cyan-400/40"
+          : "border-cyan-500/80"
+      }`}
+    >
+      <Handle
+        type="target"
+        position={Position.Top}
+        className="!h-2.5 !w-2.5 !border-2 !border-slate-950 !bg-cyan-400"
+      />
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-[10px] font-extrabold uppercase tracking-[0.18em] text-cyan-400">
+            Research Root
+          </p>
+          <p className="mt-1 max-w-56 text-sm font-bold leading-5 text-white">
+            {data.root.title}
+          </p>
+        </div>
+        <span className="rounded-lg bg-cyan-400 px-2 py-1 text-xs font-black text-slate-950">
+          F
+        </span>
+      </div>
+      <button
+        type="button"
+        onClick={openIngestion}
+        className="mt-4 rounded-lg border border-cyan-400/50 bg-cyan-400/10 px-3 py-2 text-xs font-bold text-cyan-200 transition hover:bg-cyan-400 hover:text-slate-950"
+      >
+        Edit research object
+      </button>
+      <Handle
+        type="source"
+        position={Position.Bottom}
+        className="!h-2.5 !w-2.5 !border-2 !border-slate-950 !bg-cyan-400"
+      />
+    </div>
+  );
+});
+
+function TopBar({
+  activeMode,
+  setActiveMode,
+  layoutMode,
+  setLayoutMode,
+  onOpenIngest,
+  onRunCopilot,
+  onDownloadReport,
+  isReviewing,
+  error,
+}) {
+  const modes = [
+    { id: "manual", label: "● Manual" },
+    { id: "review", label: "◉ Review" },
+    { id: "magic", label: "✦ Magic" },
+  ];
+
+  return (
+    <header className="border-b border-slate-800 bg-[#0B1120]/95 px-4 py-3 backdrop-blur-xl sm:px-6">
+      <div className="mx-auto flex max-w-[1920px] flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+        <button
+          type="button"
+          onClick={onOpenIngest}
+          className="flex items-center gap-3 self-start rounded-xl text-left outline-none transition hover:opacity-90 focus-visible:ring-2 focus-visible:ring-cyan-400 xl:self-auto"
+          aria-label="Open research ingestion"
+        >
+          <span className="grid h-10 w-10 place-items-center rounded-xl bg-cyan-400 text-lg font-black text-slate-950 shadow-lg shadow-cyan-500/20">
+            F
+          </span>
+          <span>
+            <span className="block text-base font-bold tracking-tight text-white">
+              Flow-AI IDE
+            </span>
+            <span className="mt-0.5 block text-xs font-medium text-emerald-400">
+              • gpt-5.6-sol - Syncing workspace
+            </span>
+          </span>
+        </button>
+
+        <div className="flex flex-col items-start gap-2 xl:items-center">
+          <div
+            className="inline-flex rounded-xl border border-slate-700 bg-slate-950/70 p-1"
+            role="group"
+            aria-label="Workspace mode"
+          >
+            {modes.map((mode) => (
+              <button
+                key={mode.id}
+                type="button"
+                onClick={() => setActiveMode(mode.id)}
+                className={`rounded-lg px-3 py-2 text-xs font-bold transition ${
+                  activeMode === mode.id
+                    ? "border border-slate-600 bg-slate-800 text-cyan-300 shadow-inner"
+                    : "border border-transparent text-slate-500 hover:text-slate-200"
+                }`}
+              >
+                {mode.label}
+              </button>
+            ))}
+          </div>
+
+          <div
+            className="inline-flex rounded-lg border border-slate-800 bg-slate-950/70 p-0.5"
+            role="group"
+            aria-label="Graph layout mode"
+          >
+            <button
+              type="button"
+              onClick={() => setLayoutMode("graph")}
+              className={`rounded-md px-2.5 py-1 text-[11px] font-bold transition ${
+                layoutMode === "graph"
+                  ? "bg-cyan-400 text-slate-950"
+                  : "text-slate-500 hover:text-slate-200"
+              }`}
+            >
+              Graph
+            </button>
+            <button
+              type="button"
+              onClick={() => setLayoutMode("tree")}
+              className={`rounded-md px-2.5 py-1 text-[11px] font-bold transition ${
+                layoutMode === "tree"
+                  ? "bg-cyan-400 text-slate-950"
+                  : "text-slate-500 hover:text-slate-200"
+              }`}
+            >
+              Tree
+            </button>
+          </div>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2 xl:justify-end">
+          <button
+            type="button"
+            onClick={onRunCopilot}
+            disabled={isReviewing}
+            className="rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 px-4 py-2.5 text-sm font-extrabold text-white shadow-lg shadow-cyan-950/40 transition hover:from-cyan-400 hover:to-blue-500 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {isReviewing ? "Co-Pilot thinking..." : "Запустити Context Co-Pilot"}
+          </button>
+          <button
+            type="button"
+            onClick={onDownloadReport}
+            className="rounded-xl border border-slate-700 bg-[#0f172a] px-4 py-2.5 text-sm font-bold text-slate-200 transition hover:border-cyan-400/70 hover:text-cyan-300"
+          >
+            📥 Експорт у Skill / Download Report
+          </button>
+        </div>
+      </div>
+      {error && (
+        <div className="mx-auto mt-3 max-w-[1920px] rounded-lg border border-rose-500/50 bg-rose-500/10 px-3 py-2 text-sm text-rose-200">
+          {error}
+        </div>
+      )}
+    </header>
+  );
+}
+
+function IngestResearchModal({
+  isOpen,
+  query,
+  setQuery,
+  text,
+  setText,
+  isAnalyzing,
+  onAnalyze,
+  onClose,
+  spotlightInputRef,
+}) {
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/40 p-4 backdrop-blur-md">
+      <section
+        className="w-full max-w-2xl rounded-2xl border border-cyan-400/25 bg-[#0f172a]/95 p-5 shadow-2xl shadow-cyan-950/50 sm:p-7"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="ingest-modal-title"
+      >
+        <div className="flex items-start justify-between gap-5">
+          <div>
+            <p className="text-[10px] font-extrabold uppercase tracking-[0.2em] text-cyan-400">
+              Spotlight Ingestion
+            </p>
+            <h2 id="ingest-modal-title" className="mt-2 text-2xl font-bold text-white">
+              Start a spatial research workspace
+            </h2>
+            <p className="mt-2 text-sm leading-6 text-slate-400">
+              Define the active question and source material. Flow-AI will spawn a
+              new Research Root on the canvas.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-lg px-2 py-1 text-xl leading-none text-slate-500 transition hover:bg-slate-800 hover:text-slate-100"
+            aria-label="Close ingestion modal"
+          >
+            ×
+          </button>
+        </div>
+
+        <div className="mt-6 space-y-4">
+          <label className="block">
+            <span className="text-xs font-extrabold uppercase tracking-[0.16em] text-slate-400">
+              Active Query
+            </span>
+            <input
+              type="text"
+              ref={spotlightInputRef}
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="What should Flow-AI investigate?"
+              autoFocus
+              className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-sm text-slate-100 outline-none transition placeholder:text-slate-600 focus:border-cyan-400 focus:ring-2 focus:ring-cyan-400/20"
+            />
+          </label>
+
+          <label className="block">
+            <span className="text-xs font-extrabold uppercase tracking-[0.16em] text-slate-400">
+              Research Document
+            </span>
+            <textarea
+              value={text}
+              onChange={(event) => setText(event.target.value)}
+              placeholder="Paste source material, notes, transcripts, or evidence..."
+              className="mt-2 min-h-52 w-full resize-y rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-sm leading-6 text-slate-100 outline-none transition placeholder:text-slate-600 focus:border-cyan-400 focus:ring-2 focus:ring-cyan-400/20"
+            />
+          </label>
+        </div>
+
+        <div className="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:items-center sm:justify-end">
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={isAnalyzing}
+            className="rounded-xl px-4 py-3 text-sm font-bold text-slate-400 transition hover:text-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={onAnalyze}
+            disabled={isAnalyzing}
+            className="rounded-xl bg-gradient-to-r from-cyan-400 to-blue-500 px-5 py-3 text-sm font-extrabold text-slate-950 shadow-lg shadow-cyan-950/40 transition hover:from-cyan-300 hover:to-blue-400 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {isAnalyzing
+              ? "Analyzing research..."
+              : "Analyze Research → Spawn Root Node"}
+          </button>
+        </div>
+      </section>
+    </div>
+  );
+}
+
 const nodeTypes = {
   fact: FactNode,
   draft: DraftNode,
   contextLayer: ContextLayerNode,
+  root: RootNode,
 };
 
 const readError = async (response, fallback) => {
@@ -201,6 +466,10 @@ const getDraftPosition = (findingCount) => ({
 export default function App() {
   const [text, setText] = useState("");
   const [query, setQuery] = useState("");
+  const [isIngestModalOpen, setIsIngestModalOpen] = useState(false);
+  const [rootNode, setRootNode] = useState(null);
+  const [activeMode, setActiveMode] = useState("review");
+  const [layoutMode, setLayoutMode] = useState("graph");
   const [proposals, setProposals] = useState([]);
   const [findings, setFindings] = useState([]);
   const [socraticDraft, setSocraticDraft] = useState(null);
@@ -254,6 +523,12 @@ export default function App() {
     loadWorkspace();
   }, [loadWorkspace]);
 
+  useEffect(() => {
+    if (!isLoadingWorkspace && !rootNode && findings.length === 0) {
+      setIsIngestModalOpen(true);
+    }
+  }, [findings.length, isLoadingWorkspace, rootNode]);
+
   const handleResearch = async () => {
     if (!query.trim() || !text.trim()) {
       setError("Заповніть Active Query та Research Document перед аналізом.");
@@ -280,6 +555,12 @@ export default function App() {
         throw new Error(await readError(response, "AI-аналіз не виконався."));
       }
 
+      setRootNode({
+        id: `research-root-${Date.now()}`,
+        title: query.trim(),
+        createdAt: new Date().toISOString(),
+      });
+      setIsIngestModalOpen(false);
       await loadWorkspace();
     } catch (requestError) {
       setError(
@@ -400,6 +681,21 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    const rootFlowNode = rootNode
+      ? [
+          {
+            id: rootNode.id,
+            type: "root",
+            position: { x: 520, y: 60 },
+            data: {
+              root: rootNode,
+              onOpenIngest: () => setIsIngestModalOpen(true),
+            },
+            zIndex: 3,
+          },
+        ]
+      : [];
+
     const baseFactNodes = findings.map((finding, index) => ({
       id: `finding-${finding.id}`,
       type: "fact",
@@ -477,7 +773,7 @@ export default function App() {
         ]
       : [];
 
-    setNodes([...layerNodes, ...factNodes, ...draftNode]);
+    setNodes([...rootFlowNode, ...layerNodes, ...factNodes, ...draftNode]);
   }, [
     contextLayers,
     draftTargetFindingId,
@@ -485,6 +781,7 @@ export default function App() {
     handleRejectDraft,
     handleSocraticCommit,
     isMergingDraft,
+    rootNode,
     setNodes,
     socraticDraft,
   ]);
@@ -578,6 +875,11 @@ export default function App() {
   const handleNodeClick = useCallback((event, node) => {
     event.stopPropagation();
 
+    if (node.type === "root") {
+      setIsIngestModalOpen(true);
+      return;
+    }
+
     if (node.type === "draft") {
       setSelectedItem({ kind: "draft", item: node.data.draft });
       setSelectedDraftNodeId(node.id);
@@ -621,8 +923,11 @@ export default function App() {
 
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") {
         event.preventDefault();
-        spotlightInputRef.current?.focus();
-        spotlightInputRef.current?.select();
+        setIsIngestModalOpen(true);
+        requestAnimationFrame(() => {
+          spotlightInputRef.current?.focus();
+          spotlightInputRef.current?.select();
+        });
         return;
       }
 
@@ -669,9 +974,11 @@ export default function App() {
     setNodes((currentNodes) => {
       const nextPositions = new Map();
       const rootNode = currentNodes.find((node) => node.type === "root");
+      const rootPosition =
+        layoutMode === "tree" ? { x: 520, y: 50 } : { x: 600, y: 360 };
 
       if (rootNode) {
-        nextPositions.set(rootNode.id, { x: 400, y: 50 });
+        nextPositions.set(rootNode.id, rootPosition);
       }
 
       const layoutTargets = currentNodes.filter(
@@ -681,9 +988,19 @@ export default function App() {
       );
 
       layoutTargets.forEach((node, index) => {
+        if (layoutMode === "tree") {
+          nextPositions.set(node.id, {
+            x: 520,
+            y: 240 + index * 280,
+          });
+          return;
+        }
+
+        const angle =
+          -Math.PI / 2 + (Math.PI * 2 * index) / Math.max(layoutTargets.length, 1);
         nextPositions.set(node.id, {
-          x: 160 + (index % 2) * 740,
-          y: 220 + Math.floor(index / 2) * 320,
+          x: Math.round(rootPosition.x + Math.cos(angle) * 480),
+          y: Math.round(rootPosition.y + Math.sin(angle) * 300),
         });
       });
 
@@ -713,6 +1030,7 @@ export default function App() {
       const nodeById = new Map(positionedNodes.map((node) => [node.id, node]));
       const getAbsolutePosition = (node) => {
         const parent = node.parentId ? nodeById.get(node.parentId) : null;
+
         return parent
           ? {
               x: parent.position.x + node.position.x,
@@ -728,19 +1046,22 @@ export default function App() {
           ? nodeById.get(`finding-${draftTargetFindingId}`)
           : null;
         const targetPosition = target ? getAbsolutePosition(target) : null;
+        const graphOffset =
+          targetPosition && targetPosition.x < rootPosition.x ? -340 : 340;
 
         return {
           ...node,
           position: targetPosition
-            ? { x: targetPosition.x + 320, y: targetPosition.y + 18 }
-            : {
-                x: 160 + (index % 2) * 740,
-                y: 220 + Math.floor(index / 2) * 320,
-              },
+            ? layoutMode === "tree"
+              ? { x: targetPosition.x + 390, y: targetPosition.y + 20 }
+              : { x: targetPosition.x + graphOffset, y: targetPosition.y + 40 }
+            : layoutMode === "tree"
+              ? { x: 910, y: 240 + index * 280 }
+              : { x: rootPosition.x + 520, y: rootPosition.y + 140 },
         };
       });
     });
-  }, [draftTargetFindingId, setNodes]);
+  }, [draftTargetFindingId, layoutMode, setNodes]);
 
   const generateMarkdownReport = useCallback(() => {
     const verifiedFacts = nodes.filter(
@@ -833,58 +1154,17 @@ export default function App() {
   return (
     <main className="h-screen overflow-hidden bg-[#0B1120] text-slate-100">
       <div className="grid h-full grid-rows-[auto_minmax(0,1fr)]">
-        <header className="border-b border-slate-800 bg-[#0F172A]/95 px-4 py-3 backdrop-blur sm:px-6">
-          <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
-            <div className="min-w-56">
-              <p className="text-[10px] font-extrabold uppercase tracking-[0.24em] text-cyan-400">
-                Context Git · Spatial Research
-              </p>
-              <h1 className="mt-1 text-xl font-bold tracking-tight text-white">
-                Flow-AI Research IDE
-              </h1>
-            </div>
-
-            <div className="grid w-full max-w-5xl gap-2 md:grid-cols-[1fr_1.5fr_auto]">
-              <input
-                type="text"
-                ref={spotlightInputRef}
-                value={query}
-                onChange={(event) => setQuery(event.target.value)}
-                placeholder="Active Query"
-                className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 outline-none transition placeholder:text-slate-600 focus:border-cyan-400 focus:ring-2 focus:ring-cyan-400/20"
-              />
-              <textarea
-                value={text}
-                onChange={(event) => setText(event.target.value)}
-                placeholder="Research Document — вставте текст для аналізу"
-                className="h-10 resize-none rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 outline-none transition placeholder:text-slate-600 focus:border-cyan-400 focus:ring-2 focus:ring-cyan-400/20"
-              />
-              <button
-                type="button"
-                onClick={handleResearch}
-                disabled={isAnalyzing}
-                className="rounded-lg bg-cyan-400 px-4 py-2 text-sm font-extrabold text-slate-950 transition hover:bg-cyan-300 disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                {isAnalyzing ? "Analyzing..." : "Analyze Research"}
-              </button>
-            </div>
-
-            <div className="hidden text-right xl:block">
-              <p className="text-[10px] uppercase tracking-wider text-slate-500">
-                Workspace State
-              </p>
-              <p className="text-sm font-bold text-emerald-300">
-                {findings.length} verified · {proposals.length} inbox
-              </p>
-            </div>
-          </div>
-
-          {error && (
-            <div className="mt-3 rounded-lg border border-rose-500/50 bg-rose-500/10 px-3 py-2 text-sm text-rose-200">
-              {error}
-            </div>
-          )}
-        </header>
+        <TopBar
+          activeMode={activeMode}
+          setActiveMode={setActiveMode}
+          layoutMode={layoutMode}
+          setLayoutMode={setLayoutMode}
+          onOpenIngest={() => setIsIngestModalOpen(true)}
+          onRunCopilot={handleSocraticReview}
+          onDownloadReport={generateMarkdownReport}
+          isReviewing={isReviewing}
+          error={error}
+        />
 
         <div className="grid min-h-0 grid-cols-1 xl:grid-cols-[280px_minmax(0,1fr)_340px]">
           <aside className="flex min-h-0 flex-col border-r border-slate-800 bg-[#0F172A]">
@@ -1020,7 +1300,9 @@ export default function App() {
                 nodeBorderRadius={8}
                 className="!border !border-slate-700 !bg-[#0f172a] !shadow-2xl"
               />
-              <Controls className="!border-slate-700 !bg-slate-900 !fill-slate-300 !shadow-xl" />
+              <Controls
+                className="!overflow-hidden !rounded-xl !border !border-slate-700 !bg-[#0f172a] !shadow-2xl [&_button]:!h-9 [&_button]:!w-9 [&_button]:!border-0 [&_button]:!border-b [&_button]:!border-slate-700 [&_button]:!bg-[#0f172a] [&_button]:!text-cyan-400 [&_button:hover]:!bg-slate-800 [&_button:last-child]:!border-b-0 [&_button_svg]:!fill-cyan-400 [&_button_svg]:!stroke-cyan-400"
+              />
             </ReactFlow>
           </section>
 
@@ -1255,6 +1537,17 @@ export default function App() {
           </aside>
         </div>
       </div>
+      <IngestResearchModal
+        isOpen={isIngestModalOpen}
+        query={query}
+        setQuery={setQuery}
+        text={text}
+        setText={setText}
+        isAnalyzing={isAnalyzing}
+        onAnalyze={handleResearch}
+        onClose={() => setIsIngestModalOpen(false)}
+        spotlightInputRef={spotlightInputRef}
+      />
     </main>
   );
 }
