@@ -5,6 +5,7 @@ import {
   Controls,
   Handle,
   MarkerType,
+  MiniMap,
   Position,
   ReactFlow,
   useEdgesState,
@@ -207,7 +208,9 @@ export default function App() {
   const [contextLayers, setContextLayers] = useState([]);
   const [selectedNodeIds, setSelectedNodeIds] = useState([]);
   const [selectedItem, setSelectedItem] = useState(null);
+  const [selectedDraftNodeId, setSelectedDraftNodeId] = useState(null);
   const [inspectorTab, setInspectorTab] = useState("state");
+  const [targetLang, setTargetLang] = useState("auto");
   const [error, setError] = useState("");
   const [isLoadingWorkspace, setIsLoadingWorkspace] = useState(true);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
@@ -215,6 +218,7 @@ export default function App() {
   const [committingProposalId, setCommittingProposalId] = useState(null);
   const [isMergingDraft, setIsMergingDraft] = useState(false);
   const layerCounter = useRef(1);
+  const spotlightInputRef = useRef(null);
 
   const [nodes, setNodes, onNodesChange] = useNodesState([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
@@ -265,7 +269,11 @@ export default function App() {
       const response = await fetch(`${API_URL}/api/research`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ query: query.trim(), text: text.trim() }),
+        body: JSON.stringify({
+          query: query.trim(),
+          text: text.trim(),
+          target_lang: targetLang,
+        }),
       });
 
       if (!response.ok) {
@@ -321,6 +329,7 @@ export default function App() {
       const response = await fetch(`${API_URL}/api/socratic/review`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ target_lang: targetLang }),
       });
 
       if (!response.ok) {
@@ -386,6 +395,7 @@ export default function App() {
   const handleRejectDraft = useCallback(() => {
     setSocraticDraft(null);
     setDraftTargetFindingId(null);
+    setSelectedDraftNodeId(null);
     setSelectedItem((current) => (current?.kind === "draft" ? null : current));
   }, []);
 
@@ -509,13 +519,13 @@ export default function App() {
               label: "red-team challenge",
               type: "smoothstep",
               animated: true,
-              markerEnd: { type: MarkerType.ArrowClosed, color: "#facc15" },
+              markerEnd: { type: MarkerType.ArrowClosed, color: "#ef4444" },
               style: {
-                stroke: "#facc15",
+                stroke: "#ef4444",
                 strokeWidth: 2,
-                strokeDasharray: "7 5",
+                strokeDasharray: "5, 5",
               },
-              labelStyle: { fill: "#fde68a", fontSize: 11, fontWeight: 700 },
+              labelStyle: { fill: "#fca5a5", fontSize: 11, fontWeight: 700 },
               labelBgStyle: { fill: "#0f172a", fillOpacity: 0.94 },
               data: { system: "conflict" },
             },
@@ -570,12 +580,14 @@ export default function App() {
 
     if (node.type === "draft") {
       setSelectedItem({ kind: "draft", item: node.data.draft });
+      setSelectedDraftNodeId(node.id);
       setInspectorTab("state");
       return;
     }
 
     if (node.type === "fact") {
       setSelectedItem({ kind: "finding", item: node.data.finding });
+      setSelectedDraftNodeId(null);
       setInspectorTab("state");
     }
   }, []);
@@ -586,12 +598,47 @@ export default function App() {
         .filter((node) => node.type === "fact" && !node.parentId)
         .map((node) => node.id)
     );
+    setSelectedDraftNodeId(
+      selectedNodes.find((node) => node.type === "draft")?.id || null
+    );
   }, []);
 
   const handlePaneClick = useCallback(() => {
     setSelectedItem(null);
     setSelectedNodeIds([]);
+    setSelectedDraftNodeId(null);
   }, []);
+
+  useEffect(() => {
+    const handleHotkey = (event) => {
+      const activeElement = document.activeElement;
+      const isTyping =
+        activeElement instanceof HTMLElement &&
+        (activeElement.tagName === "INPUT" ||
+          activeElement.tagName === "TEXTAREA" ||
+          activeElement.tagName === "SELECT" ||
+          activeElement.isContentEditable);
+
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") {
+        event.preventDefault();
+        spotlightInputRef.current?.focus();
+        spotlightInputRef.current?.select();
+        return;
+      }
+
+      if (
+        !isTyping &&
+        selectedDraftNodeId &&
+        (event.key === "Backspace" || event.key === "Delete")
+      ) {
+        event.preventDefault();
+        handleRejectDraft();
+      }
+    };
+
+    window.addEventListener("keydown", handleHotkey);
+    return () => window.removeEventListener("keydown", handleHotkey);
+  }, [handleRejectDraft, selectedDraftNodeId]);
 
   const handleGroupSelection = useCallback(() => {
     const groupableNodes = nodes.filter(
@@ -685,6 +732,7 @@ export default function App() {
             <div className="grid w-full max-w-5xl gap-2 md:grid-cols-[1fr_1.5fr_auto]">
               <input
                 type="text"
+                ref={spotlightInputRef}
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
                 placeholder="Active Query"
@@ -845,6 +893,18 @@ export default function App() {
               className="bg-[#0B1120]"
             >
               <Background color="#334155" gap={16} size={1} />
+              <MiniMap
+                bgColor="#0f172a"
+                maskColor="rgba(11, 17, 32, 0.78)"
+                nodeColor={(node) => {
+                  if (node.type === "draft") return "#ef4444";
+                  if (node.type === "contextLayer") return "#22d3ee";
+                  return "#34d399";
+                }}
+                nodeStrokeColor="#334155"
+                nodeBorderRadius={8}
+                className="!border !border-slate-700 !bg-[#0f172a] !shadow-2xl"
+              />
               <Controls className="!border-slate-700 !bg-slate-900 !fill-slate-300 !shadow-xl" />
             </ReactFlow>
           </section>
@@ -854,6 +914,20 @@ export default function App() {
               <p className="text-[10px] font-extrabold uppercase tracking-[0.18em] text-yellow-400">
                 Socratic Co-Pilot
               </p>
+              <label className="mt-3 block">
+                <span className="text-[10px] font-extrabold uppercase tracking-[0.16em] text-slate-500">
+                  Response language
+                </span>
+                <select
+                  value={targetLang}
+                  onChange={(event) => setTargetLang(event.target.value)}
+                  className="mt-1.5 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm font-semibold text-slate-200 outline-none transition focus:border-cyan-400 focus:ring-2 focus:ring-cyan-400/20"
+                >
+                  <option value="auto">Auto</option>
+                  <option value="en">English</option>
+                  <option value="uk">Українська</option>
+                </select>
+              </label>
               <button
                 type="button"
                 onClick={handleSocraticReview}
