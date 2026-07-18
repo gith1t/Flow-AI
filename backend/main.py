@@ -135,7 +135,7 @@ async def start_research(payload: ResearchRequest):
         "  ]\n"
         "}\n"
         "Strictly avoid any markdown formatting. Return raw JSON."
-        "CRITICAL REQUIREMENT: You MUST generate your response (titles, details, hypotheses, questions) IN THE EXACT SAME LANGUAGE as the provided Research Document or Workspace text. If the text is in Ukrainian, respond in Ukrainian. If in English, respond in English. Do not mix languages."
+        "CRITICAL REQUIREMENT: You MUST generate your response (titles, details, hypotheses, questions) IN THE EXACT SAME LANGUAGE as the provided Research Document or Workspace text."
     )
     
     user_content = f"User Query: {payload.query}\n\nText to analyze:\n{payload.text}"
@@ -240,7 +240,7 @@ async def socratic_review():
         "  }\\n"
         "}\\n"
         "confidence_score має бути цілим числом від 0 до 100."
-        "CRITICAL REQUIREMENT: You MUST generate your response (titles, details, hypotheses, questions) IN THE EXACT SAME LANGUAGE as the provided Research Document or Workspace text. If the text is in Ukrainian, respond in Ukrainian. If in English, respond in English. Do not mix languages."
+        "CRITICAL REQUIREMENT: You MUST generate your response (titles, details, hypotheses, questions) IN THE EXACT SAME LANGUAGE as the provided Research Document or Workspace text."
     )
 
     user_content = (
