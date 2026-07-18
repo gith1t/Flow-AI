@@ -239,16 +239,14 @@ async def commit_proposal(proposal_id: str):
     save_state(state)
     return {"status": "success", "committed_finding": proposal}
 
-@app.post("/api/socratic/review")
-async def socratic_review(payload: SocraticReviewRequest = None):
-    if payload is None:
-        payload = SocraticReviewRequest()
+@app.post("/api/socratic/review", response_model=SocraticDraft)
+async def socratic_review(request: SocraticRequest) -> SocraticDraft:
     state = load_state()
     findings = state.get("findings", [])
     proposals = state.get("proposals", [])
 
     if not findings and not proposals:
-        empty = SocraticDraft(
+        return SocraticDraft(
             identified_gap="Workspace is empty — no findings or proposals to analyze yet.",
             socratic_questions=[
                 "What primary source or claim should we anchor the first finding on?",
@@ -261,92 +259,61 @@ async def socratic_review(payload: SocraticReviewRequest = None):
                 evidence="",
             ),
         )
-        return empty
 
-    system_prompt = (
-        "Ти — Socratic Co-Pilot. Проаналізуй поточну базу знань (findings) та пропозиції (proposals). "
-        "Знайди логічні розриви (Gaps) або суперечності. Сформулюй 2-3 Сократичні запитання для вирішення "
-        "цього розриву і запропонуй нову картку-гіпотезу для заповнення цієї прогалини. "
-        "Твоя гіпотеза ПОВИННА супроводжуватися точною цитатою-доказом (evidence) з існуючих фактів (findings), "
-        "щоб уникнути галюцинацій. Не вигадуй доказів, яких немає у findings. "
-        "Відповідь має суворо відповідати JSON-схемі SocraticDraft.\\n"
-        "{\\n"
-        '  "identified_gap": "Опис логічного розриву або конфлікту між поточними картками",\\n'
-        '  "socratic_questions": ["Запитання 1", "Запитання 2", "Запитання 3"],\\n'
-        '  "proposed_hypothesis": {\\n'
-        '    "title": "Коротка назва гіпотези",\\n'
-        '    "details": "Детальне пояснення гіпотези, що заповнює прогалину",\\n'
-        '    "evidence": "ТОЧНА цитата-доказ з існуючого факту (finding)",\\n'
-        '    "confidence_score": 70\\n'
-        "  }\\n"
-        "}\\n"
-        "confidence_score має бути цілим числом від 0 до 100."
-        "CRITICAL REQUIREMENT: You MUST generate your response (titles, details, hypotheses, questions) IN THE EXACT SAME LANGUAGE as the provided Research Document or Workspace text."
+    target_instruction = (
+        "You are an AI Red Teamer. Critique only the targeted fact below. Attack its "
+        "logic, unstated assumptions, evidentiary basis, missing context, and possible "
+        "contradictions with the workspace. Do not drift into a generic workspace review.\n"
+        f"Target fact ID: {request.fact_id}\n"
+        f"Target fact text: {request.fact_text}\n"
+        if request.fact_text
+        else "You are a Socratic Co-Pilot. Critique the entire workspace and identify its "
+        "most consequential logical gap, unsupported claim, or contradiction.\n"
     )
 
-    # Прицілювання (Red Teaming) на конкретний факт
-    if payload.fact_text:
-        system_prompt = (
-            "You are an AI Red Teamer. Critique THIS SPECIFIC FACT: "
-            f"'{payload.fact_text}'. "
-            "Find logical gaps, hidden assumptions, missing evidence, or contradictions "
-            "between this fact and the rest of the knowledge base. "
-            "Formulate 2-3 Socratic questions to resolve these gaps and propose a hypothesis "
-            "card that fills the identified gap. "
-            "Your hypothesis MUST be backed by an exact evidence quote from existing facts (findings) "
-            "to avoid hallucinations. Do not invent evidence that is not in the findings. "
-            "Respond strictly in the JSON schema SocraticDraft.\\n"
-            "{\\n"
-            '  "identified_gap": "Description of the logical gap or conflict for THIS fact",\\n'
-            '  "socratic_questions": ["Question 1", "Question 2", "Question 3"],\\n'
-            '  "proposed_hypothesis": {\\n'
-            '    "title": "Short hypothesis name",\\n'
-            '    "details": "Detailed explanation of the hypothesis filling the gap",\\n'
-            '    "evidence": "EXACT evidence quote from an existing fact (finding)",\\n'
-            '    "confidence_score": 70\\n'
-            "  }\\n"
-            "}\\n"
-            "confidence_score must be an integer from 0 to 100."
-            "CRITICAL REQUIREMENT: You MUST generate your response (titles, details, hypotheses, questions) IN THE EXACT SAME LANGUAGE as the provided Research Document or Workspace text."
-        )
+    system_prompt = (
+        f"{target_instruction}"
+        "Use only the supplied findings and proposals as evidence. Do not invent sources "
+        "or quotations. Return only a valid JSON object in this exact format:\n"
+        "{\n"
+        '  "identified_gap": "The precise logical gap or vulnerability",\n'
+        '  "socratic_questions": ["Question 1", "Question 2", "Question 3"],\n'
+        '  "proposed_hypothesis": {\n'
+        '    "title": "Short hypothesis name",\n'
+        '    "details": "Evidence-based hypothesis that addresses the gap",\n'
+        '    "evidence": "EXACT quotation from an existing finding",\n'
+        '    "confidence_score": 70\n'
+        "  }\n"
+        "}\n"
+        "confidence_score must be an integer from 0 to 100."
+    )
 
-    if payload.target_lang and payload.target_lang != "auto":
+    if request.target_lang and request.target_lang != "auto":
         system_prompt += (
-            f" OVERRIDE: The user explicitly requested the response language to be "
-            f"'{payload.target_lang}'. You MUST generate your response in {payload.target_lang}, "
-            f"regardless of the input text language."
+            "\nCRITICAL: You MUST generate your ENTIRE response strictly in the "
+            f"{request.target_lang} language, completely ignoring the language of the "
+            "source document."
         )
 
     user_content = (
-        f"Current findings:\\n{json.dumps(findings, ensure_ascii=False)}\\n\\n"
-        f"Current proposals:\\n{json.dumps(proposals, ensure_ascii=False)}"
+        f"Current findings:\n{json.dumps(findings, ensure_ascii=False)}\n\n"
+        f"Current proposals:\n{json.dumps(proposals, ensure_ascii=False)}"
     )
 
     try:
-        print(">>> Відправляємо стан в OpenAI (Socratic Co-Pilot)...")
-        try:
-            response = client.chat.completions.create(
-                model="gpt-4o",
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_content}
-                ],
-                response_format={"type": "json_object"}
-            )
-        except Exception as e:
-            print(f"❌ КРИТИЧНА ПОМИЛКА OPENAI API: {e}")
-            raise e
-
-        raw_content = response.choices[0].message.content
-        print(f">>> Отримано сиру відповідь: {raw_content[:200]}...")
-
+        response = client.chat.completions.create(
+            model="gpt-4o",
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_content},
+            ],
+            response_format={"type": "json_object"},
+        )
+        raw_content = response.choices[0].message.content or "{}"
         result_data = json.loads(extract_json(raw_content))
-        # Draft не зберігаємо у файл — це лише пропозиція (Context Git draft branch)
-        draft = SocraticDraft(**result_data)
-        return draft
-
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Socratic Monitor Error: {str(e)}")
+        return SocraticDraft(**result_data)
+    except Exception as error:
+        raise HTTPException(status_code=500, detail=f"Socratic Monitor Error: {str(error)}")
 
 @app.post("/api/socratic/commit")
 async def socratic_commit(payload: HypothesisCommitRequest):
