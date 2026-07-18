@@ -705,7 +705,7 @@ export default function App() {
       setError(
         requestError instanceof Error
           ? requestError.message
-          : "Сталася помилка під час Context Co-Pilot review."
+          : "Сталася помилка під Context Co-Pilot review."
       );
     } finally {
       setIsReviewing(false);

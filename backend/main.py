@@ -57,13 +57,10 @@ class ResearchRequest(BaseModel):
     text: str
     target_lang: Optional[str] = "auto"
 
-class SocraticReviewRequest(BaseModel):
+class SocraticRequest(BaseModel):
     target_lang: Optional[str] = "auto"
     fact_id: Optional[str] = None
     fact_text: Optional[str] = None
-
-# Аліас згідно зі специфікацією (SocraticRequest === SocraticReviewRequest)
-SocraticRequest = SocraticReviewRequest
 
 class ProposedHypothesis(BaseModel):
     title: str
@@ -81,6 +78,14 @@ class HypothesisCommitRequest(BaseModel):
     details: str
     confidence_score: int
     evidence: str
+
+class ResearchResponse(BaseModel):
+    status: str
+    new_proposals: List[Finding] = Field(default_factory=list)
+    suggested_layout: str = Field(
+        default="graph",
+        description="One of: graph, tree, timeline, comparison",
+    )
 
 class WorkspaceState(BaseModel):
     model_config = ConfigDict(extra="allow")
@@ -122,22 +127,23 @@ async def get_workspace():
     state.setdefault("suggested_layout", "graph")
     return WorkspaceState.model_validate(state)
 
-@app.post("/api/research")
-async def start_research(payload: ResearchRequest):
+@app.post("/api/research", response_model=ResearchResponse)
+async def start_research(payload: ResearchRequest) -> ResearchResponse:
     state = load_state()
-    
     system_prompt = (
-        "You are an expert historical and mythological research AI. "
-        "Your task is to analyze the provided text and extract key findings, facts, or claims "
-        "relevant to the user's query. "
-        "You MUST respond ONLY with a valid JSON object in this exact format:\n"
+        "You are an expert research AI. Analyze the supplied document and extract "
+        "high-value findings that answer the user's query. Every proposed finding must "
+        "be supported by an exact quotation from the supplied document. Do not invent "
+        "evidence, sources, relationships, or facts. Return only a valid JSON object "
+        "with this exact structure:\n"
         "{\n"
+        '  "suggested_layout": "graph",\n'
         '  "proposals": [\n'
         "    {\n"
         '      "id": "prop_1",\n'
-        '      "title": "Short title of the finding",\n'
+        '      "title": "Short finding title",\n'
         '      "status": "Unidentified",\n'
-        '      "details": "Detailed explanation of the claim, context, and potential relations.",\n'
+        '      "details": "Evidence-based explanation of the finding",\n'
         '      "commit_state": {\n'
         '        "revision": 1,\n'
         '        "workspace": "Proposal",\n'
@@ -146,70 +152,75 @@ async def start_research(payload: ResearchRequest):
         '      "evidence": [\n'
         "        {\n"
         '          "id": "ev_1",\n'
-        '          "title": "Name of source text (e.g. Homer, Iliad)",\n'
-        '          "quote": "EXACT quote from the user-provided text that proves this finding."\n'
+        '          "title": "Source title",\n'
+        '          "quote": "EXACT quotation from the supplied document"\n'
         "        }\n"
         "      ],\n"
         '      "relations": []\n'
         "    }\n"
         "  ]\n"
         "}\n"
-        "Strictly avoid any markdown formatting. Return raw JSON."
-        "CRITICAL REQUIREMENT: You MUST generate your response (titles, details, hypotheses, questions) IN THE EXACT SAME LANGUAGE as the provided Research Document or Workspace text."
+        "The suggested_layout value must be exactly one of graph, tree, timeline, comparison. "
+        "Use timeline for chronological material, comparison for two or more entities being "
+        "compared, tree for hierarchy or parent-child structure, and graph for all other cases."
     )
 
     if payload.target_lang and payload.target_lang != "auto":
         system_prompt += (
-            f" OVERRIDE: The user explicitly requested the response language to be "
-            f"'{payload.target_lang}'. You MUST generate your response in {payload.target_lang}, "
-            f"regardless of the input text language."
+            "\nCRITICAL: You MUST generate your ENTIRE response strictly in the "
+            f"{payload.target_lang} language, completely ignoring the language of the "
+            "source document."
         )
 
     user_content = f"User Query: {payload.query}\n\nText to analyze:\n{payload.text}"
-    
+
     try:
-        print(">>> Відправляємо текст в OpenAI...")
-        try:
-            response = client.chat.completions.create(
-                model="gpt-4o",
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_content}
-                ],
-                response_format={"type": "json_object"}
-            )
-        except Exception as e:
-            print(f"❌ КРИТИЧНА ПОМИЛКА OPENAI API: {e}")
-            raise e
-        
-        raw_content = response.choices[0].message.content
-        print(f">>> Отримано сиру відповідь: {raw_content[:200]}...")
-        
+        response = client.chat.completions.create(
+            model="gpt-4o",
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_content},
+            ],
+            response_format={"type": "json_object"},
+        )
+        raw_content = response.choices[0].message.content or "{}"
         result_data = json.loads(extract_json(raw_content))
-        new_proposals = result_data.get("proposals", [])
-        
+        requested_layout = result_data.get("suggested_layout", "graph")
+        suggested_layout = (
+            requested_layout
+            if requested_layout in {"graph", "tree", "timeline", "comparison"}
+            else "graph"
+        )
         final_proposals = []
-        for idx, prop in enumerate(new_proposals):
-            prop["id"] = f"prop_{datetime.utcnow().strftime('%Y%m%d%H%M%S')}_{idx}"
+
+        for index, proposal in enumerate(result_data.get("proposals", [])):
+            proposal["id"] = f"prop_{datetime.utcnow().strftime('%Y%m%d%H%M%S')}_{index}"
+            proposal.setdefault("commit_state", {})
+            proposal["commit_state"].setdefault("revision", 1)
+            proposal["commit_state"].setdefault("workspace", "Proposal")
+            proposal["commit_state"]["updated_at"] = datetime.utcnow().isoformat()
+            proposal.setdefault("status", "Unidentified")
+            proposal.setdefault("evidence", [])
+            proposal.setdefault("relations", [])
+
             try:
-                prop["commit_state"]["updated_at"] = datetime.utcnow().isoformat()
-            except (KeyError, TypeError):
-                # картка без commit_state — пропустимо на етапі валідації нижче
-                pass
-            
-            try:
-                validated_finding = Finding(**prop)
-            except Exception as e:
-                print(f"Помилка валідації картки: {e}")
+                validated_proposal = Finding(**proposal)
+            except Exception:
                 continue
-            state["proposals"].append(validated_finding.dict())
-            final_proposals.append(validated_finding)
-            
+
+            state.setdefault("proposals", []).append(validated_proposal.model_dump())
+            final_proposals.append(validated_proposal)
+
+        state["suggested_layout"] = suggested_layout
         save_state(state)
-        return {"status": "success", "new_proposals": final_proposals}
-        
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"OpenAI API Error: {str(e)}")
+
+        return ResearchResponse(
+            status="success",
+            new_proposals=final_proposals,
+            suggested_layout=suggested_layout,
+        )
+    except Exception as error:
+        raise HTTPException(status_code=500, detail=f"OpenAI API Error: {str(error)}")
 
 @app.post("/api/proposals/{proposal_id}/commit")
 async def commit_proposal(proposal_id: str):
