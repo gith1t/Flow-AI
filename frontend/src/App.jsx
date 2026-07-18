@@ -611,13 +611,25 @@ export default function App() {
         throw new Error(await readError(response, "AI-аналіз не виконався."));
       }
 
+      const data = await response.json();
+      const suggestedLayout =
+        data?.suggested_layout === "tree" || data?.suggested_layout === "graph"
+          ? data.suggested_layout
+          : null;
+
       setRootNode({
         id: `research-root-${Date.now()}`,
         title: query.trim(),
         createdAt: new Date().toISOString(),
       });
       setIsIngestModalOpen(false);
+
       await loadWorkspace();
+
+      if (suggestedLayout) {
+        setLayoutMode(suggestedLayout);
+        requestAnimationFrame(() => applyMagicLayout(suggestedLayout));
+      }
     } catch (requestError) {
       setError(
         requestError instanceof Error
@@ -627,7 +639,7 @@ export default function App() {
     } finally {
       setIsAnalyzing(false);
     }
-  }, [loadWorkspace, query, targetLang, text]);
+  }, [applyMagicLayout, loadWorkspace, query, targetLang, text]);
 
   const handleProposalCommit = async (proposalId) => {
     try {
@@ -659,6 +671,10 @@ export default function App() {
   };
 
   const handleSocraticReview = useCallback(async () => {
+    const selectedNode = nodes.find(
+      (node) => node.selected && node.type === "fact"
+    );
+
     try {
       setIsReviewing(true);
       setError("");
@@ -666,7 +682,11 @@ export default function App() {
       const response = await fetch(`${API_URL}/api/socratic/review`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ target_lang: targetLang }),
+        body: JSON.stringify({
+          target_lang: targetLang,
+          fact_id: selectedNode?.id,
+          fact_text: selectedNode?.data?.label,
+        }),
       });
 
       if (!response.ok) {
@@ -676,11 +696,8 @@ export default function App() {
       }
 
       const draft = await response.json();
-      const selectedFinding =
-        selectedItem?.kind === "finding" ? selectedItem.item : null;
-      const targetFinding = selectedFinding || findings[findings.length - 1] || null;
 
-      setDraftTargetFindingId(targetFinding?.id || null);
+      setDraftTargetFindingId(selectedNode?.id || null);
       setSocraticDraft(draft);
       setSelectedItem({ kind: "draft", item: draft });
       setInspectorTab("state");
@@ -693,7 +710,7 @@ export default function App() {
     } finally {
       setIsReviewing(false);
     }
-  }, [findings, selectedItem, targetLang]);
+  }, [nodes, targetLang]);
 
   const handleSocraticCommit = useCallback(async () => {
     if (!socraticDraft?.proposed_hypothesis) return;
@@ -756,7 +773,7 @@ export default function App() {
       id: `finding-${finding.id}`,
       type: "fact",
       position: getFactPosition(index),
-      data: { finding },
+      data: { finding, label: finding.details },
       zIndex: 1,
     }));
 
@@ -810,7 +827,9 @@ export default function App() {
       };
     });
 
-    const draftTarget = findings.find((finding) => finding.id === draftTargetFindingId);
+    const draftTarget = findings.find(
+      (finding) => `finding-${finding.id}` === draftTargetFindingId
+    );
     const draftNode = socraticDraft
       ? [
           {
@@ -844,6 +863,7 @@ export default function App() {
 
   useEffect(() => {
     const findingIds = new Set(findings.map((finding) => finding.id));
+    const findingNodeIds = new Set(findings.map((finding) => `finding-${finding.id}`));
     const relationEdges = findings.flatMap((finding) =>
       (finding.relations || [])
         .filter((relation) => findingIds.has(relation.target_id))
@@ -863,12 +883,12 @@ export default function App() {
     );
 
     const conflictEdge =
-      socraticDraft && draftTargetFindingId && findingIds.has(draftTargetFindingId)
+      socraticDraft && draftTargetFindingId && findingNodeIds.has(draftTargetFindingId)
         ? [
             {
-              id: `conflict-socratic-draft-finding-${draftTargetFindingId}`,
+              id: `conflict-socratic-draft-${draftTargetFindingId}`,
               source: "socratic-draft",
-              target: `finding-${draftTargetFindingId}`,
+              target: draftTargetFindingId,
               label: "red-team challenge",
               type: "smoothstep",
               animated: true,
@@ -1026,8 +1046,7 @@ export default function App() {
     setError("");
   }, [nodes, selectedNodeIds]);
 
-  const applyMagicLayout = useCallback(
-    (requestedLayoutMode = layoutMode) => {
+  function applyMagicLayout(requestedLayoutMode = layoutMode) {
       const activeLayoutMode = requestedLayoutMode === "tree" ? "tree" : "graph";
 
       setNodes((currentNodes) => {
@@ -1118,7 +1137,7 @@ export default function App() {
           if (node.type !== "draft") return node;
 
           const target = draftTargetFindingId
-            ? nodeById.get(`finding-${draftTargetFindingId}`)
+            ? nodeById.get(draftTargetFindingId)
             : null;
           const targetPosition = target ? getAbsolutePosition(target) : null;
           let newX;
@@ -1144,9 +1163,7 @@ export default function App() {
           };
         });
       });
-    },
-    [draftTargetFindingId, layoutMode, setNodes]
-  );
+  }
 
   const generateMarkdownReport = useCallback(() => {
     const verifiedFacts = nodes.filter(
@@ -1362,6 +1379,9 @@ export default function App() {
               nodes={nodes}
               edges={edges}
               nodeTypes={nodeTypes}
+              nodesDraggable={activeMode === "manual"}
+              nodesConnectable={activeMode === "manual"}
+              elementsSelectable={true}
               onNodesChange={onNodesChange}
               onEdgesChange={onEdgesChange}
               onConnect={handleConnect}
