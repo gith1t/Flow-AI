@@ -37,21 +37,9 @@ Flow-AI provides one local-first canvas for that workflow. It separates unverifi
 
 Flow-AI is designed for research where provenance matters. The graph is not just a visual decoration: it is a working map of claims, evidence, confidence, relationships, review decisions, and revisions. The researcher remains in control of what becomes an official finding and what becomes a durable relationship.
 
-## Architecture
+## Technology stack
 
-```mermaid
-flowchart LR
-    A[Spotlight Ingestion] --> B[FastAPI source extraction]
-    B --> C[OpenAI structured analysis]
-    C --> D[AI Inbox proposals]
-    D --> E[Human merge]
-    E --> F[Verified Fact Nodes]
-    F --> G[Relation Firewall and connection discovery]
-    G --> H[React Flow canvas]
-    H --> I[UI state snapshots and Time Travel]
-```
-
-| Layer | Technology | Responsibility |
+| Area | Technology | Role |
 |---|---|---|
 | Client | React 19, Vite 8, Tailwind CSS 3.4 | SPA shell, ingestion modal, graph UI, Inspector, localization |
 | Graph | `@xyflow/react` 12 | Fact Nodes, Draft Nodes, Context Layers, handles, edges, minimap, controls |
@@ -60,7 +48,7 @@ flowchart LR
 | Extraction | `pypdf`, `python-docx`, `python-multipart` | PDF/DOCX/text file ingestion and page-aware source extraction |
 | Persistence | Local `workspace_state.json` | Topics, sources, proposals, findings, relations, UI state, history |
 
-The client is a pure Vite React SPA. There is no Next.js, no server component layer, and no frontend API proxy. Requests go directly to `http://localhost:8000`.
+The client is a pure Vite React SPA. Requests go directly to `http://localhost:8000`.
 
 ## Requirements
 
@@ -228,7 +216,7 @@ The backend tests cover the frontend/API contract, source extraction, target lan
 
 ## Current scope
 
-Flow-AI is intentionally local-first for the hackathon. Authentication, hosted multi-user persistence, OCR, production observability, and asynchronous job queues are outside the current MVP scope. The architecture keeps those future additions isolated behind the FastAPI boundary.
+Flow-AI is intentionally local-first for the hackathon. Authentication, hosted multi-user persistence, OCR, production observability, and asynchronous job queues are outside the current MVP scope.
 
 ## License
 
