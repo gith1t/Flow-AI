@@ -52,6 +52,7 @@ const FactNode = memo(function FactNode({ data, selected }) {
 const DraftNode = memo(function DraftNode({ data, selected }) {
   const mergeBranch = (event) => {
     event.stopPropagation();
+    if (!data.canMerge) return;
     data.onMerge();
   };
 
@@ -93,11 +94,17 @@ const DraftNode = memo(function DraftNode({ data, selected }) {
         {data.draft.identified_gap}
       </p>
 
+      {!data.canMerge && (
+        <p className="mt-3 rounded-lg border border-rose-400/40 bg-rose-950/30 px-3 py-2 text-xs font-medium text-rose-200">
+          Merge requires an exact source evidence quote.
+        </p>
+      )}
+
       <div className="mt-4 flex flex-wrap gap-2">
         <button
           type="button"
           onClick={mergeBranch}
-          disabled={data.isMerging}
+          disabled={data.isMerging || !data.canMerge}
           className="rounded-lg bg-yellow-400 px-3 py-2 text-xs font-extrabold text-slate-950 transition hover:bg-yellow-300 disabled:cursor-not-allowed disabled:opacity-60"
         >
           {data.isMerging ? "Merging..." : "Resolve & Merge"}
@@ -563,7 +570,11 @@ const getConfidenceScore = (proposal) => {
   return Number.isFinite(Number(score)) ? Number(score) : "—";
 };
 
-const GRAPH_UI_STORAGE_KEY = "flow-ai-graph-ui-v4";
+const GRAPH_UI_STORAGE_KEY = "flow-ai-graph-ui-v5";
+const LAYOUT_MODES = ["graph", "tree", "timeline", "comparison"];
+
+const isUsablePosition = (position) =>
+  Number.isFinite(Number(position?.x)) && Number.isFinite(Number(position?.y));
 
 const readGraphUiState = () => {
   try {
@@ -577,14 +588,19 @@ const readGraphUiState = () => {
           : {},
       manualEdges: Array.isArray(parsed.manualEdges) ? parsed.manualEdges : [],
       contextLayers: Array.isArray(parsed.contextLayers) ? parsed.contextLayers : [],
+      layoutMode: LAYOUT_MODES.includes(parsed.layoutMode)
+        ? parsed.layoutMode
+        : "graph",
     };
   } catch {
-    return { nodePositions: {}, manualEdges: [], contextLayers: [] };
+    return {
+      nodePositions: {},
+      manualEdges: [],
+      contextLayers: [],
+      layoutMode: "graph",
+    };
   }
 };
-
-const isUsablePosition = (position) =>
-  Number.isFinite(Number(position?.x)) && Number.isFinite(Number(position?.y));
 
 const getSavedPosition = (positions, nodeId, fallback) => {
   const storedPosition = positions[nodeId];
@@ -609,6 +625,43 @@ const getAbsoluteNodePosition = (nodes, nodeId) => {
   }
 
   return { x, y };
+};
+
+const getAbsolutePositionFromChange = (nodes, nodeId, change) => {
+  if (isUsablePosition(change.positionAbsolute)) {
+    return {
+      x: Number(change.positionAbsolute.x),
+      y: Number(change.positionAbsolute.y),
+    };
+  }
+
+  if (!isUsablePosition(change.position)) {
+    return null;
+  }
+
+  const nodeById = new Map(nodes.map((node) => [node.id, node]));
+  let currentNode = nodeById.get(nodeId);
+  let x = Number(change.position.x);
+  let y = Number(change.position.y);
+  const visited = new Set();
+
+  while (currentNode?.parentId && !visited.has(currentNode.id)) {
+    visited.add(currentNode.id);
+    const parentNode = nodeById.get(currentNode.parentId);
+
+    if (!parentNode || !isUsablePosition(parentNode.position)) {
+      break;
+    }
+
+    x += Number(parentNode.position.x);
+    y += Number(parentNode.position.y);
+    currentNode = parentNode;
+  }
+
+  return {
+    x: Number.isFinite(x) ? x : 100,
+    y: Number.isFinite(y) ? y : 100,
+  };
 };
 
 const getTopicPosition = (index) => ({
@@ -644,13 +697,15 @@ export default function App() {
   const [researchTopics, setResearchTopics] = useState([]);
   const [activeTopicId, setActiveTopicId] = useState(null);
   const [activeMode, setActiveMode] = useState("review");
-  const [layoutMode, setLayoutMode] = useState("graph");
+  const persistedGraphRef = useRef(readGraphUiState());
+  const [layoutMode, setLayoutMode] = useState(
+    () => persistedGraphRef.current.layoutMode
+  );
   const [proposals, setProposals] = useState([]);
   const [findings, setFindings] = useState([]);
   const [socraticDraft, setSocraticDraft] = useState(null);
   const [draftTargetFindingId, setDraftTargetFindingId] = useState(null);
   const [draftTopicId, setDraftTopicId] = useState(null);
-  const persistedGraphRef = useRef(readGraphUiState());
   const [contextLayers, setContextLayers] = useState(
     () => persistedGraphRef.current.contextLayers
   );
@@ -681,43 +736,107 @@ export default function App() {
 
   const [nodes, setNodes, onNodesChange] = useNodesState([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
+  const nodesRef = useRef([]);
+
+  useEffect(() => {
+    nodesRef.current = nodes;
+  }, [nodes]);
 
   const buildUiState = useCallback(() => {
-    const nodePositions = nodes.map((node) => {
-      const absolute = getAbsoluteNodePosition(nodes, node.id);
-      return { id: node.id, x: absolute.x, y: absolute.y };
+    const positionsById = { ...nodePositions };
+    const currentNodes = nodesRef.current;
+
+    currentNodes.forEach((node) => {
+      if (node.type === "contextLayer") return;
+
+      const absolute = getAbsoluteNodePosition(currentNodes, node.id);
+
+      if (isUsablePosition(absolute)) {
+        positionsById[node.id] = absolute;
+      }
     });
 
     return {
       mode: layoutMode,
       selected_node_id: selectedNodeIds?.[0] || null,
-      node_positions: nodePositions,
+      node_positions: Object.entries(positionsById)
+        .filter(([, position]) => isUsablePosition(position))
+        .map(([id, position]) => ({
+          id,
+          x: Number(position.x),
+          y: Number(position.y),
+        })),
+      manual_edges: manualEdges,
+      context_layers: contextLayers,
     };
-  }, [nodes, layoutMode, selectedNodeIds]);
+  }, [contextLayers, layoutMode, manualEdges, nodePositions, selectedNodeIds]);
 
   const applyRestoredUiState = useCallback(
     (uiState) => {
-      if (!uiState?.node_positions?.length) return;
       const restored = {};
-      uiState.node_positions.forEach((position) => {
-        restored[position.id] = { x: Number(position.x), y: Number(position.y) };
-      });
+
+      if (Array.isArray(uiState?.node_positions)) {
+        uiState.node_positions.forEach((position) => {
+          if (position?.id && isUsablePosition(position)) {
+            restored[position.id] = {
+              x: Number(position.x),
+              y: Number(position.y),
+            };
+          }
+        });
+      }
+
+      const restoredManualEdges = Array.isArray(uiState?.manual_edges)
+        ? uiState.manual_edges
+        : [];
+      const restoredContextLayers = Array.isArray(uiState?.context_layers)
+        ? uiState.context_layers
+        : [];
+      const restoredLayoutMode = LAYOUT_MODES.includes(uiState?.mode)
+        ? uiState.mode
+        : "graph";
+
       setNodePositions(restored);
+      setManualEdges(restoredManualEdges);
+      setContextLayers(restoredContextLayers);
+      setLayoutMode(restoredLayoutMode);
+      setSelectedNodeIds(
+        uiState?.selected_node_id ? [uiState.selected_node_id] : []
+      );
+
+      setNodes((currentNodes) =>
+        currentNodes.map((node) => {
+          const restoredPosition = restored[node.id];
+
+          if (
+            !restoredPosition ||
+            node.type === "contextLayer" ||
+            node.parentId
+          ) {
+            return node;
+          }
+
+          return { ...node, position: restoredPosition };
+        })
+      );
     },
-    [setNodePositions]
+    [setNodePositions, setNodes]
   );
 
   const persistUiState = useCallback(async () => {
-    try {
-      const uiState = buildUiState();
-      await fetch(`${API_URL}/api/workspace/ui-state`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ui_state: uiState }),
-      });
-    } catch {
-      // best-effort: UI persistence must never block the primary action
+    const response = await fetch(`${API_URL}/api/workspace/ui-state`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ui_state: buildUiState() }),
+    });
+
+    if (!response.ok) {
+      throw new Error(
+        await readError(response, "Не вдалося зберегти стан канвасу.")
+      );
     }
+
+    return response.json();
   }, [buildUiState]);
 
   const loadWorkspace = useCallback(async () => {
@@ -734,6 +853,9 @@ export default function App() {
       }
 
       const workspace = await response.json();
+      if (workspace?.ui_state) {
+        applyRestoredUiState(workspace.ui_state);
+      }
       setProposals(Array.isArray(workspace.proposals) ? workspace.proposals : []);
       setFindings(Array.isArray(workspace.findings) ? workspace.findings : []);
       setWorkspaceHistory(Array.isArray(workspace.history) ? workspace.history : []);
@@ -753,7 +875,7 @@ export default function App() {
     } finally {
       setIsLoadingWorkspace(false);
     }
-  }, []);
+  }, [applyRestoredUiState]);
 
   useEffect(() => {
     loadWorkspace();
@@ -769,9 +891,14 @@ export default function App() {
   useEffect(() => {
     window.localStorage.setItem(
       GRAPH_UI_STORAGE_KEY,
-      JSON.stringify({ nodePositions, manualEdges, contextLayers })
+      JSON.stringify({
+        nodePositions,
+        manualEdges,
+        contextLayers,
+        layoutMode,
+      })
     );
-  }, [contextLayers, manualEdges, nodePositions]);
+  }, [contextLayers, layoutMode, manualEdges, nodePositions]);
 
   const activeTopic = useMemo(
     () => researchTopics.find((topic) => topic.id === activeTopicId) || null,
@@ -931,6 +1058,7 @@ export default function App() {
     ingestMode,
     isExtractingSource,
     loadWorkspace,
+    persistUiState,
     query,
     sourcePageCount,
     sourceTitle,
@@ -1003,7 +1131,7 @@ export default function App() {
     } finally {
       setIsDiscoveringConnections(false);
     }
-  }, [activeTopicId, loadWorkspace, targetLang]);
+  }, [activeTopicId, loadWorkspace, persistUiState, targetLang]);
 
   const handleSocraticReview = useCallback(async () => {
     const selectedNode = nodes.find(
@@ -1085,7 +1213,13 @@ export default function App() {
     } finally {
       setIsMergingDraft(false);
     }
-  }, [activeTopicId, draftTopicId, loadWorkspace, socraticDraft]);
+  }, [
+    activeTopicId,
+    draftTopicId,
+    loadWorkspace,
+    persistUiState,
+    socraticDraft,
+  ]);
 
   const handleRejectDraft = useCallback(() => {
     setSocraticDraft(null);
@@ -1205,6 +1339,9 @@ export default function App() {
               onMerge: handleSocraticCommit,
               onReject: handleRejectDraft,
               isMerging: isMergingDraft,
+              canMerge: Boolean(
+                socraticDraft.proposed_hypothesis?.evidence?.trim()
+              ),
             },
             zIndex: 2,
           },
@@ -1326,28 +1463,45 @@ export default function App() {
 
   const handleNodesChange = useCallback(
     (changes) => {
-      onNodesChange(changes);
+      const nodeById = new Map(nodes.map((node) => [node.id, node]));
+
+      onNodesChange(
+        changes.filter((change) => {
+          const changedNode = nodeById.get(change.id);
+
+          return !(
+            change.type === "position" &&
+            changedNode?.type === "contextLayer"
+          );
+        })
+      );
+
       setNodePositions((currentPositions) => {
         let hasPositionChange = false;
         const nextPositions = { ...currentPositions };
 
         changes.forEach((change) => {
-          if (
-            change.type !== "position" ||
-            !change.position ||
-            !isUsablePosition(change.position)
-          ) {
+          if (change.type !== "position") {
             return;
           }
 
-          // Ignore movement of the contextLayer frame itself.
-          const changedNode = nodes.find((node) => node.id === change.id);
-          if (changedNode?.type === "contextLayer") return;
+          const changedNode = nodeById.get(change.id);
 
-          nextPositions[change.id] = {
-            x: Number(change.position.x),
-            y: Number(change.position.y),
-          };
+          if (!changedNode || changedNode.type === "contextLayer") {
+            return;
+          }
+
+          const absolutePosition = getAbsolutePositionFromChange(
+            nodes,
+            change.id,
+            change
+          );
+
+          if (!absolutePosition) {
+            return;
+          }
+
+          nextPositions[change.id] = absolutePosition;
           hasPositionChange = true;
         });
 
@@ -1383,7 +1537,7 @@ export default function App() {
         await loadWorkspace();
       }
     },
-    [loadWorkspace]
+    [loadWorkspace, persistUiState]
   );
 
   const handleEdgesChange = useCallback(
@@ -1481,7 +1635,7 @@ export default function App() {
         })();
       }
     },
-    [loadWorkspace]
+    [loadWorkspace, persistUiState]
   );
 
   const handleNodeClick = useCallback((event, node) => {
@@ -1652,16 +1806,10 @@ export default function App() {
       };
     }
 
-    setNodePositions((currentPositions) => ({ ...currentPositions, ...nextPositions }));
-    setNodes((currentNodes) =>
-      currentNodes.map((node) => {
-        const position = nextPositions[node.id];
-
-        if (!position || node.type === "contextLayer") return node;
-
-        return { ...node, position };
-      })
-    );
+    setNodePositions((currentPositions) => ({
+      ...currentPositions,
+      ...nextPositions,
+    }));
   }
 
   applyMagicLayoutRef.current = applyMagicLayout;

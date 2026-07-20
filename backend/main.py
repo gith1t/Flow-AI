@@ -15,9 +15,8 @@ from pypdf import PdfReader
 
 app = FastAPI(title="Yomirai Backend Engine")
 
-# Завантажує змінні з .env, що лежить на рівень вище проєкту (поза репозиторієм -> не потрапить у git)
-# backend/main.py -> ../../.env == C:\Users\Gitpc\OneDrive\Документы\.env
-load_dotenv(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", ".env"))
+# backend/main.py -> backend/.env
+load_dotenv(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env"))
 
 # CORS setup
 app.add_middleware(
@@ -135,9 +134,11 @@ class UiNodePosition(BaseModel):
     y: float
 
 class WorkspaceUiState(BaseModel):
-    mode: Optional[str] = "graph"
+    mode: str = "graph"
     selected_node_id: Optional[str] = None
     node_positions: List[UiNodePosition] = Field(default_factory=list)
+    manual_edges: List[Dict[str, Any]] = Field(default_factory=list)
+    context_layers: List[Dict[str, Any]] = Field(default_factory=list)
 
 class UiStateUpdateRequest(BaseModel):
     ui_state: Optional[WorkspaceUiState] = None
@@ -169,7 +170,7 @@ class WorkspaceState(BaseModel):
     topics: List[ResearchTopic] = Field(default_factory=list)
     sources: List[ResearchSource] = Field(default_factory=list)
     history: List[WorkspaceSnapshot] = Field(default_factory=list)
-    ui_state: Optional[WorkspaceUiState] = None
+    ui_state: WorkspaceUiState = Field(default_factory=WorkspaceUiState)
     suggested_layout: str = Field(
         default="graph",
         description="One of: graph, tree, timeline, comparison",
@@ -276,7 +277,9 @@ def append_snapshot(state: Dict[str, Any], action: str) -> WorkspaceSnapshot:
             "proposals": copy.deepcopy(state.get("proposals", [])),
             "topics": copy.deepcopy(state.get("topics", [])),
             "sources": copy.deepcopy(state.get("sources", [])),
-            "ui_state": copy.deepcopy(state.get("ui_state")),
+            "ui_state": copy.deepcopy(
+                state.get("ui_state", WorkspaceUiState().model_dump())
+            ),
             "suggested_layout": state.get("suggested_layout", "graph"),
         },
     }
@@ -298,7 +301,7 @@ def workspace_response(state: Dict[str, Any]) -> WorkspaceState:
         topics=normalized_state["topics"],
         sources=normalized_state["sources"],
         history=history,
-        ui_state=normalized_state.get("ui_state"),
+        ui_state=WorkspaceUiState.model_validate(normalized_state["ui_state"]),
         suggested_layout=normalized_state["suggested_layout"],
     )
 
@@ -309,8 +312,15 @@ def normalize_state(state: Dict[str, Any]) -> Dict[str, Any]:
     state.setdefault("sources", [])
     state.setdefault("snapshots", [])
     state.setdefault("revision", 0)
-    state.setdefault("ui_state", None)
+    state.setdefault("ui_state", WorkspaceUiState().model_dump())
     state.setdefault("suggested_layout", "graph")
+
+    try:
+        state["ui_state"] = WorkspaceUiState.model_validate(
+            state["ui_state"]
+        ).model_dump()
+    except Exception:
+        state["ui_state"] = WorkspaceUiState().model_dump()
 
     has_legacy_records = any(
         not item.get("topic_id")
@@ -445,13 +455,13 @@ async def extract_source(file: UploadFile = File(...)) -> SourceExtractionRespon
         character_count=len(text),
     )
 
-@app.put("/api/workspace/ui-state")
-async def update_ui_state(payload: UiStateUpdateRequest):
+@app.put("/api/workspace/ui-state", response_model=WorkspaceState)
+async def update_ui_state(payload: UiStateUpdateRequest) -> WorkspaceState:
     state = load_state()
     if payload.ui_state is not None:
         state["ui_state"] = payload.ui_state.model_dump()
         save_state(state)
-    return {"status": "success", "ui_state": state.get("ui_state")}
+    return workspace_response(state)
 
 
 @app.post("/api/workspace/checkout/{revision}", response_model=WorkspaceState)
@@ -469,11 +479,14 @@ async def checkout_workspace(revision: int, payload: Optional[UiStateUpdateReque
     if snapshot is None:
         raise HTTPException(status_code=404, detail="Workspace revision not found")
 
+    if payload and payload.ui_state is not None:
+        state["ui_state"] = payload.ui_state.model_dump()
+
+    append_snapshot(state, f"Checkpoint before restoring revision r{revision}")
+
     restored_state = copy.deepcopy(snapshot.get("state", {}))
     restored_state["snapshots"] = copy.deepcopy(state.get("snapshots", []))
     restored_state["revision"] = state.get("revision", 0)
-    if payload and payload.ui_state is not None:
-        restored_state["ui_state"] = payload.ui_state.model_dump()
     normalize_state(restored_state)
     append_snapshot(restored_state, f"Restored workspace to revision r{revision}")
     save_state(restored_state)
@@ -997,18 +1010,29 @@ async def socratic_review(request: SocraticRequest) -> SocraticDraft:
 @app.post("/api/socratic/commit")
 async def socratic_commit(payload: HypothesisCommitRequest):
     state = load_state()
-    if payload.evidence:
-        workspace_evidence = {
-            evidence.get("quote")
-            for finding in state.get("findings", [])
-            for evidence in finding.get("evidence", [])
-            if isinstance(evidence, dict) and evidence.get("quote")
-        }
-        if payload.evidence not in workspace_evidence:
-            raise HTTPException(
-                status_code=422,
-                detail="Socratic hypothesis evidence must be an exact workspace quote.",
-            )
+    evidence_quote = payload.evidence.strip()
+    if not evidence_quote:
+        raise HTTPException(
+            status_code=422,
+            detail="Socratic hypotheses require an exact evidence quote before they can be merged.",
+        )
+
+    matched_evidence = next(
+        (
+            copy.deepcopy(evidence)
+            for existing_finding in state.get("findings", [])
+            for evidence in existing_finding.get("evidence", [])
+            if isinstance(evidence, dict) and evidence.get("quote") == evidence_quote
+        ),
+        None,
+    )
+    if matched_evidence is None:
+        raise HTTPException(
+            status_code=422,
+            detail="Socratic hypothesis evidence must be an exact workspace quote.",
+        )
+
+    matched_evidence["id"] = create_id("ev")
     topic = next(
         (item for item in state["topics"] if item.get("id") == payload.topic_id),
         None,
@@ -1040,26 +1064,17 @@ async def socratic_commit(payload: HypothesisCommitRequest):
         "title": payload.title,
         "status": "Verified",
         "details": payload.details,
+        "confidence_score": payload.confidence_score,
         "commit_state": {
             "revision": int(state.get("revision", 0)) + 1,
             "workspace": "Committed",
             "updated_at": utc_now(),
         },
-        "evidence": (
-            [
-                {
-                    "id": create_id("ev"),
-                    "title": "Socratic hypothesis evidence",
-                    "quote": payload.evidence,
-                }
-            ]
-            if payload.evidence
-            else []
-        ),
+        "evidence": [matched_evidence],
         "relations": [],
         "topic_id": topic_id,
-        "source_id": None,
-        "source_title": "Socratic review",
+        "source_id": matched_evidence.get("source_id"),
+        "source_title": matched_evidence.get("title") or "Socratic review",
     }
     state.setdefault("findings", []).append(finding)
     normalize_state(state)
