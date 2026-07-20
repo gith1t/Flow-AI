@@ -1,4 +1,4 @@
-# Flow-AI: Spatial Research IDE & AI Red Teaming
+# Flow-AI: Spatial Research IDE & Evidence-Grounded Research
 
 **Track:** Developer Tools  
 **Hackathon:** OpenAI Build Week (Codex & GPT-5.6)
@@ -17,7 +17,7 @@ Flow-AI is a local-first Spatial Research IDE built around **Context Git**:
 - turn only evidence-backed claims into AI proposals;
 - promote human-approved proposals into verified Fact Nodes;
 - visualize topic trails, reviewable AI relation candidates, verified links, and manual hypotheses on one React Flow canvas;
-- use a targeted Socratic Co-Pilot to red-team a selected fact and create a visible conflict branch;
+- use a targeted Socratic Co-Pilot to review a selected fact and create a visible review branch;
 - restore earlier research and canvas states with Time Travel.
 
 The selected response language also localizes the interface. **Auto** follows the language of the imported source document; explicit English or Ukrainian selection applies to the UI, AI findings, Socratic review, and relation labels.
@@ -40,14 +40,14 @@ Each research question creates a Root Node. Add multiple papers or notes to the 
 - AI-discovered, evidence-backed relationships through **Discover Connections**, initially shown as yellow review candidates;
 - human approval or rejection for every AI relation candidate in the selected Fact’s Inspector;
 - persistent manual Fact → Fact connections in Manual mode; manual links between separate topics are explicitly labelled **Cross-topic hypothesis**, never as evidence-verified AI claims;
-- visible red animated conflict edges from Socratic Drafts to the fact under review;
+- visible animated review edges from Socratic Drafts to the fact under review;
 - Context Layers for grouping related facts.
 
-Click any relationship edge to open its **Relation Inspector**: source and target facts, status, origin, confidence, exact evidence, and rationale are visible in one place. The Graph Filters panel can focus the active topic, search findings, filter by source or confidence, and toggle evidence trails, reviewed links, candidates, manual hypotheses, and Red Team branches.
+Click any relationship edge to open its **Relation Inspector**: source and target facts, status, origin, confidence, exact evidence, and rationale are visible in one place. The Graph Filters panel can focus the active topic, search findings, filter by source or confidence, and toggle evidence trails, reviewed links, candidates, manual hypotheses, and Socratic review branches.
 
 ### Socratic Co-Pilot
 
-Select a Fact Node and run the Co-Pilot. It acts as a Red Teamer against that specific fact: logic, hidden assumptions, evidence quality, and missing context. The result appears as a Draft Branch that can be **Resolve & Merge**d or rejected.
+Select a Fact Node and run the Co-Pilot. It acts as a critical evidence reviewer for that specific fact: logic, hidden assumptions, evidence quality, and missing context. The result appears as a Socratic Review Draft that can be **Resolve & Merge**d or dismissed.
 
 ### Smart layouts and Time Travel
 
@@ -63,7 +63,7 @@ The Spotlight Ingestion modal accepts **PDF, DOCX, TXT, Markdown, CSV, TSV, JSON
 |---|---|---|
 | Client | React 19, Vite, Tailwind CSS, `@xyflow/react` | Spatial graph, Inspector, Ingestion, layouts, local canvas state |
 | API | FastAPI, Pydantic | Research workflow, strict evidence validation, workspace revisions, file extraction |
-| Model | `gpt-5.6-luna` with `reasoning_effort="low"` | Fact proposals, layout suggestions, relationship discovery, targeted Red Teaming |
+| Model | `gpt-5.6-luna` with `reasoning_effort="low"` | Fact proposals, layout suggestions, relationship discovery, targeted evidence review |
 | Persistence | Local `workspace_state.json` | Findings, topics, sources, graph relationships, history snapshots |
 
 Codex was used as the implementation partner for the React Flow interaction model, FastAPI/Pydantic contracts, layout behavior, and verification workflow.
@@ -123,7 +123,7 @@ Open `http://localhost:5173`.
 5. Use **+ Add paper** on the topic root to add a second source and expand the same research question.
 6. Merge at least two proposals in a topic, then press **Discover Connections** to ask the AI for evidence-grounded links between verified facts. Select the source Fact and approve or reject each yellow relation candidate in Inspector. Switch to **Manual** to draw your own Fact → Fact links; cross-topic links remain labelled hypotheses. **Review** runs the Socratic Co-Pilot, and **Magic** applies the active layout.
 7. Click a graph edge to inspect its source, target, status, rationale, confidence, and exact evidence. Use Graph Filters to focus the active topic or simplify the graph.
-8. Click a Fact Node, then run **Context Co-Pilot**. Inspect the red conflict edge and choose **Resolve & Merge** or **Reject Attack** on the Draft Branch.
+8. Click a Fact Node, then run **Context Co-Pilot**. Inspect the yellow review edge and choose **Resolve & Merge** or **Dismiss Review** on the Socratic Review Draft.
 9. Group related nodes into a Context Layer. Try Graph, Tree, Timeline, Comparison, and **Magic Layout**.
 10. Open Inspector → History and restore a revision to demonstrate Time Travel.
 11. Use **Download Report** to export the verified findings as Markdown.

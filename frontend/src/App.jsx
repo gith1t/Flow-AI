@@ -21,15 +21,15 @@ const UI_COPY = {
     verified: "Verified",
     evidenceConfidence: "Evidence confidence",
     unscored: "Unscored",
-    redTeamBranch: "Red Team Branch",
+    reviewBranch: "Socratic Review Draft",
     socraticDraft: "Socratic Draft",
-    attack: "Attack",
+    reviewBadge: "Review",
     critiques: "Critiques",
     workspaceAssumptions: "workspace assumptions",
     mergeRequiresEvidence: "Merge requires an exact source evidence quote.",
     merging: "Merging...",
     resolveMerge: "Resolve & Merge",
-    rejectAttack: "Reject Attack",
+    dismissReview: "Dismiss Review",
     contextLayer: "Context Layer",
     facts: "facts",
     researchTopic: "Research Topic",
@@ -120,10 +120,10 @@ const UI_COPY = {
     focusedTopic: "Focused: active topic",
     focusTopic: "Focus active topic",
     trail: "Trail",
-    redTeam: "Red team",
+    reviewEdge: "Socratic review",
     selected: "selected",
     group: "Group",
-    graphLegend: "Cyan = verified AI link · yellow dashed = review required · purple dashed = cross-topic hypothesis · red dashed = Socratic challenge.",
+    graphLegend: "Cyan = verified AI link · yellow dashed = review required · purple dashed = cross-topic hypothesis · yellow review edge = Socratic review.",
     socraticCopilot: "Socratic Co-Pilot",
     languageSetInIngestion: "Language · set in ingestion",
     magicLayout: "⚡ Magic Layout",
@@ -218,15 +218,15 @@ const UI_COPY = {
     verified: "Підтверджено",
     evidenceConfidence: "Надійність доказу",
     unscored: "Без оцінки",
-    redTeamBranch: "Red Team гілка",
+    reviewBranch: "Гілка сократичного огляду",
     socraticDraft: "Сократичний драфт",
-    attack: "Атака",
+    reviewBadge: "Огляд",
     critiques: "Критикує",
     workspaceAssumptions: "припущення робочого простору",
     mergeRequiresEvidence: "Для злиття потрібна точна цитата з джерела.",
     merging: "Злиття...",
     resolveMerge: "Вирішити й об’єднати",
-    rejectAttack: "Відхилити атаку",
+    dismissReview: "Закрити огляд",
     contextLayer: "Контекстний шар",
     facts: "фактів",
     researchTopic: "Тема дослідження",
@@ -317,10 +317,10 @@ const UI_COPY = {
     focusedTopic: "Фокус: активна тема",
     focusTopic: "Фокус на активній темі",
     trail: "Траєкторія",
-    redTeam: "Red team",
+    reviewEdge: "Сократичний огляд",
     selected: "вибрано",
     group: "Групувати",
-    graphLegend: "Ціанова лінія = підтверджений AI-зв’язок · жовта пунктирна = потрібен огляд · фіолетова пунктирна = гіпотеза між темами · червона пунктирна = сократичний виклик.",
+    graphLegend: "Ціанова лінія = підтверджений AI-зв’язок · жовта пунктирна = потрібен огляд · фіолетова пунктирна = гіпотеза між темами · жовта лінія = сократичний огляд.",
     socraticCopilot: "Сократичний Co-Pilot",
     languageSetInIngestion: "Мова · задається в імпорті",
     magicLayout: "⚡ Магічне компонування",
@@ -549,7 +549,7 @@ const DraftNode = memo(function DraftNode({ data, selected }) {
     data.onMerge();
   };
 
-  const rejectAttack = (event) => {
+  const dismissReview = (event) => {
     event.stopPropagation();
     data.onReject();
   };
@@ -568,12 +568,12 @@ const DraftNode = memo(function DraftNode({ data, selected }) {
       <div className="flex items-start justify-between gap-3">
         <div>
           <p className="text-[10px] font-extrabold uppercase tracking-[0.16em] text-yellow-300">
-            {data.copy.redTeamBranch}
+            {data.copy.reviewBranch}
           </p>
           <h3 className="mt-1 text-sm font-bold text-yellow-100">{data.copy.socraticDraft}</h3>
         </div>
         <span className="rounded-full bg-yellow-400 px-2 py-0.5 text-[10px] font-extrabold text-slate-950">
-          {data.copy.attack}
+          {data.copy.reviewBadge}
         </span>
       </div>
 
@@ -604,11 +604,11 @@ const DraftNode = memo(function DraftNode({ data, selected }) {
         </button>
         <button
           type="button"
-          onClick={rejectAttack}
+          onClick={dismissReview}
           disabled={data.isMerging}
           className="rounded-lg border border-rose-400/60 px-3 py-2 text-xs font-bold text-rose-300 transition hover:bg-rose-400 hover:text-slate-950 disabled:cursor-not-allowed disabled:opacity-60"
         >
-          {data.copy.rejectAttack}
+          {data.copy.dismissReview}
         </button>
       </div>
       <Handle
@@ -2493,26 +2493,26 @@ export default function App() {
           };
         }));
 
-    const conflictEdge =
+    const reviewEdge =
       edgeVisibility.drafts &&
       socraticDraft && draftTargetFindingId && findingNodeIds.has(draftTargetFindingId)
         ? [
             {
-              id: `conflict-socratic-draft-${draftTargetFindingId}`,
+              id: `socratic-review-${draftTargetFindingId}`,
               source: "socratic-draft",
               target: draftTargetFindingId,
-              label: copy.redTeam,
+              label: copy.reviewEdge,
               type: "smoothstep",
               animated: true,
-              markerEnd: { type: MarkerType.ArrowClosed, color: "#ef4444" },
+              markerEnd: { type: MarkerType.ArrowClosed, color: "#f59e0b" },
               style: {
-                stroke: "#ef4444",
+                stroke: "#f59e0b",
                 strokeWidth: 2,
                 strokeDasharray: "5, 5",
               },
-              labelStyle: { fill: "#fca5a5", fontSize: 11, fontWeight: 700 },
+              labelStyle: { fill: "#fcd34d", fontSize: 11, fontWeight: 700 },
               labelBgStyle: { fill: "#0f172a", fillOpacity: 0.94 },
-              data: { system: "conflict" },
+              data: { system: "socratic-review" },
             },
           ]
         : [];
@@ -2532,7 +2532,7 @@ export default function App() {
         )
         : [];
 
-      return [...topicEdges, ...relationEdges, ...conflictEdge, ...validManualEdges];
+      return [...topicEdges, ...relationEdges, ...reviewEdge, ...validManualEdges];
     });
   }, [
     draftTargetFindingId,
@@ -3049,7 +3049,7 @@ export default function App() {
     ? selectedItem.kind === "draft"
       ? {
           id: "socratic-draft",
-          status: "Red Team Draft Branch",
+          status: "Socratic Review Draft",
           timestamp: null,
           identified_gap: selectedItem.item.identified_gap,
           socratic_questions: selectedItem.item.socratic_questions,
@@ -3360,7 +3360,7 @@ export default function App() {
                     ["candidates", copy.review, "bg-yellow-400"],
                     ["manual", copy.manual, "bg-violet-400"],
                     ["hypotheses", copy.hypothesis, "bg-violet-300"],
-                    ["drafts", copy.redTeam, "bg-rose-400"],
+                    ["drafts", copy.reviewBranch, "bg-yellow-400"],
                   ].map(([key, label, colorClass]) => (
                     <button
                       key={key}

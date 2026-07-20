@@ -1482,7 +1482,7 @@ async def socratic_review(request: SocraticRequest) -> SocraticDraft:
     supplied_fact_text = (request.fact_text or "").strip()
     if selected_fact:
         target_instruction = (
-            "You are an AI Red Teamer. Critique only the targeted fact below. Attack its "
+            "You are a critical evidence reviewer. Review only the targeted fact below. Challenge its "
             "logic, unstated assumptions, evidentiary basis, missing context, and possible "
             "contradictions with the workspace. Do not drift into a generic workspace review.\n"
             f"Target fact ID: {selected_fact['id']}\n"
@@ -1491,8 +1491,8 @@ async def socratic_review(request: SocraticRequest) -> SocraticDraft:
         )
     elif supplied_fact_text:
         target_instruction = (
-            "You are an AI Red Teamer. Critique only the fact text supplied by the user "
-            "interface below. Attack its logic, unstated assumptions, evidentiary basis, "
+            "You are a critical evidence reviewer. Review only the fact text supplied by the user "
+            "interface below. Challenge its logic, unstated assumptions, evidentiary basis, "
             "missing context, and possible contradictions with the workspace. Do not drift "
             "into a generic workspace review.\n"
             f"Target fact text: {supplied_fact_text}\n"
