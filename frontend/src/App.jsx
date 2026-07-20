@@ -166,14 +166,25 @@ const RootNode = memo(function RootNode({ data, selected }) {
       <div className="flex items-start justify-between gap-3">
         <div>
           <p className="text-[10px] font-extrabold uppercase tracking-[0.18em] text-cyan-400">
-            Research Root
+            Research Topic
           </p>
           <p className="mt-1 max-w-56 text-sm font-bold leading-5 text-white">
             {data.root.title}
           </p>
+          <p className="mt-1 max-w-56 text-xs leading-5 text-slate-400">
+            {data.root.query}
+          </p>
         </div>
         <span className="rounded-lg bg-cyan-400 px-2 py-1 text-xs font-black text-slate-950">
           F
+        </span>
+      </div>
+      <div className="mt-3 flex flex-wrap gap-2 text-[10px] font-bold uppercase tracking-wide text-slate-400">
+        <span className="rounded-full border border-slate-700 bg-slate-950 px-2 py-1">
+          {data.root.source_count || 0} sources
+        </span>
+        <span className="rounded-full border border-slate-700 bg-slate-950 px-2 py-1">
+          {data.root.finding_count || 0} facts
         </span>
       </div>
       <button
@@ -181,7 +192,7 @@ const RootNode = memo(function RootNode({ data, selected }) {
         onClick={openIngestion}
         className="mt-4 rounded-lg border border-cyan-400/50 bg-cyan-400/10 px-3 py-2 text-xs font-bold text-cyan-200 transition hover:bg-cyan-400 hover:text-slate-950"
       >
-        Edit research object
+        + Add paper / source
       </button>
       <Handle
         type="source"
@@ -209,6 +220,12 @@ function TopBar({
     { id: "manual", label: "● Manual" },
     { id: "review", label: "◉ Review" },
     { id: "magic", label: "✦ Magic" },
+  ];
+  const layoutOptions = [
+    { id: "graph", label: "Graph" },
+    { id: "tree", label: "Tree" },
+    { id: "timeline", label: "Timeline" },
+    { id: "comparison", label: "Compare" },
   ];
 
   const handleModeChange = (mode) => {
@@ -245,7 +262,7 @@ function TopBar({
               Flow-AI IDE
             </span>
             <span className="mt-0.5 block text-xs font-medium text-emerald-400">
-              • gpt-5.6-sol - Syncing workspace
+              • gpt-5.6-luna - Cost-aware workspace sync
             </span>
           </span>
         </button>
@@ -277,28 +294,20 @@ function TopBar({
             role="group"
             aria-label="Graph layout mode"
           >
-            <button
-              type="button"
-              onClick={() => changeLayout("graph")}
-              className={`rounded-md px-2.5 py-1 text-[11px] font-bold transition ${
-                layoutMode === "graph"
-                  ? "bg-cyan-400 text-slate-950"
-                  : "text-slate-500 hover:text-slate-200"
-              }`}
-            >
-              Graph
-            </button>
-            <button
-              type="button"
-              onClick={() => changeLayout("tree")}
-              className={`rounded-md px-2.5 py-1 text-[11px] font-bold transition ${
-                layoutMode === "tree"
-                  ? "bg-cyan-400 text-slate-950"
-                  : "text-slate-500 hover:text-slate-200"
-              }`}
-            >
-              Tree
-            </button>
+            {layoutOptions.map((layout) => (
+              <button
+                key={layout.id}
+                type="button"
+                onClick={() => changeLayout(layout.id)}
+                className={`rounded-md px-2.5 py-1 text-[11px] font-bold transition ${
+                  layoutMode === layout.id
+                    ? "bg-cyan-400 text-slate-950"
+                    : "text-slate-500 hover:text-slate-200"
+                }`}
+              >
+                {layout.label}
+              </button>
+            ))}
           </div>
         </div>
 
@@ -331,10 +340,18 @@ function TopBar({
 
 function IngestResearchModal({
   isOpen,
+  ingestMode,
+  activeTopicTitle,
   query,
   setQuery,
   text,
   setText,
+  sourceTitle,
+  setSourceTitle,
+  sourcePageCount,
+  setSourcePageCount,
+  isExtractingSource,
+  onExtractFile,
   isAnalyzing,
   onAnalyze,
   onClose,
@@ -344,6 +361,14 @@ function IngestResearchModal({
     const file = event.target.files?.[0];
 
     if (!file) return;
+
+    setSourceTitle(file.name);
+
+    if (file.name.toLowerCase().endsWith(".pdf")) {
+      onExtractFile(file);
+      event.target.value = "";
+      return;
+    }
 
     const reader = new FileReader();
 
@@ -355,6 +380,7 @@ function IngestResearchModal({
           ? `${currentText.trim()}\n\n${uploadedText}`
           : uploadedText
       );
+      setSourcePageCount(0);
       event.target.value = "";
     };
 
@@ -377,11 +403,14 @@ function IngestResearchModal({
               Spotlight Ingestion
             </p>
             <h2 id="ingest-modal-title" className="mt-2 text-2xl font-bold text-white">
-              Start a spatial research workspace
+              {ingestMode === "source"
+                ? `Add evidence to ${activeTopicTitle || "research topic"}`
+                : "Start a new research topic"}
             </h2>
             <p className="mt-2 text-sm leading-6 text-slate-400">
-              Define the active question and source material. Flow-AI will spawn a
-              new Research Root on the canvas.
+              {ingestMode === "source"
+                ? "Import another paper, note, or dataset. New findings will connect to the active topic and relevant verified facts."
+                : "Define a concrete question and the first source. Flow-AI will create a dedicated topic root on the canvas."}
             </p>
           </div>
           <button
@@ -412,6 +441,19 @@ function IngestResearchModal({
 
           <label className="block">
             <span className="text-xs font-extrabold uppercase tracking-[0.16em] text-slate-400">
+              Source / paper title
+            </span>
+            <input
+              type="text"
+              value={sourceTitle}
+              onChange={(event) => setSourceTitle(event.target.value)}
+              placeholder="e.g. Iliad translation, paper title, or dataset name"
+              className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-sm text-slate-100 outline-none transition placeholder:text-slate-600 focus:border-cyan-400 focus:ring-2 focus:ring-cyan-400/20"
+            />
+          </label>
+
+          <label className="block">
+            <span className="text-xs font-extrabold uppercase tracking-[0.16em] text-slate-400">
               Research Document
             </span>
             <textarea
@@ -427,15 +469,25 @@ function IngestResearchModal({
               Import source file
             </span>
             <span className="mt-1 block text-xs leading-5 text-slate-500">
-              TXT, Markdown, CSV or JSON. The extracted text is appended to the document.
+              PDF, TXT, Markdown, CSV or JSON. PDF pages are extracted locally by the backend and mapped back to evidence.
             </span>
             <input
               type="file"
-              accept=".txt,.md,.csv,.json"
+              accept=".pdf,.txt,.md,.csv,.json"
               onChange={handleFileUpload}
-              disabled={isAnalyzing}
+              disabled={isAnalyzing || isExtractingSource}
               className="mt-3 block w-full cursor-pointer rounded-lg border border-slate-700 bg-slate-950 text-xs text-slate-400 file:mr-3 file:cursor-pointer file:border-0 file:bg-cyan-400 file:px-3 file:py-2 file:text-xs file:font-extrabold file:text-slate-950 hover:file:bg-cyan-300 disabled:cursor-not-allowed disabled:opacity-60"
             />
+            {isExtractingSource && (
+              <span className="mt-2 block text-xs font-semibold text-cyan-300">
+                Extracting readable text from the source…
+              </span>
+            )}
+            {!isExtractingSource && sourcePageCount > 0 && (
+              <span className="mt-2 block text-xs font-semibold text-emerald-300">
+                {sourcePageCount} PDF pages ready for evidence mapping.
+              </span>
+            )}
           </label>
         </div>
 
@@ -451,12 +503,14 @@ function IngestResearchModal({
           <button
             type="button"
             onClick={onAnalyze}
-            disabled={isAnalyzing}
+            disabled={isAnalyzing || isExtractingSource}
             className="rounded-xl bg-gradient-to-r from-cyan-400 to-blue-500 px-5 py-3 text-sm font-extrabold text-slate-950 shadow-lg shadow-cyan-950/40 transition hover:from-cyan-300 hover:to-blue-400 disabled:cursor-not-allowed disabled:opacity-60"
           >
             {isAnalyzing
               ? "Analyzing research..."
-              : "Analyze Research → Spawn Root Node"}
+              : ingestMode === "source"
+                ? "Analyze Source → Connect Findings"
+                : "Analyze Research → Create Topic"}
           </button>
         </div>
       </section>
@@ -509,44 +563,162 @@ const getConfidenceScore = (proposal) => {
   return Number.isFinite(Number(score)) ? Number(score) : "—";
 };
 
-const getFactPosition = (index) => ({
-  x: 100 + (index % 3) * 300,
-  y: 110 + Math.floor(index / 3) * 210,
+const GRAPH_UI_STORAGE_KEY = "flow-ai-graph-ui-v4";
+
+const readGraphUiState = () => {
+  try {
+    const storedValue = window.localStorage.getItem(GRAPH_UI_STORAGE_KEY);
+    const parsed = storedValue ? JSON.parse(storedValue) : {};
+
+    return {
+      nodePositions:
+        parsed.nodePositions && typeof parsed.nodePositions === "object"
+          ? parsed.nodePositions
+          : {},
+      manualEdges: Array.isArray(parsed.manualEdges) ? parsed.manualEdges : [],
+      contextLayers: Array.isArray(parsed.contextLayers) ? parsed.contextLayers : [],
+    };
+  } catch {
+    return { nodePositions: {}, manualEdges: [], contextLayers: [] };
+  }
+};
+
+const isUsablePosition = (position) =>
+  Number.isFinite(Number(position?.x)) && Number.isFinite(Number(position?.y));
+
+const getSavedPosition = (positions, nodeId, fallback) => {
+  const storedPosition = positions[nodeId];
+
+  return isUsablePosition(storedPosition)
+    ? { x: Number(storedPosition.x), y: Number(storedPosition.y) }
+    : fallback;
+};
+
+const getAbsoluteNodePosition = (nodes, nodeId) => {
+  const nodeById = new Map(nodes.map((node) => [node.id, node]));
+  let current = nodeById.get(nodeId);
+  let x = 0;
+  let y = 0;
+  const visited = new Set();
+
+  while (current && !visited.has(current.id)) {
+    visited.add(current.id);
+    x += Number(current.position?.x) || 0;
+    y += Number(current.position?.y) || 0;
+    current = current.parentId ? nodeById.get(current.parentId) : null;
+  }
+
+  return { x, y };
+};
+
+const getTopicPosition = (index) => ({
+  x: 130 + (index % 2) * 760,
+  y: 60 + Math.floor(index / 2) * 620,
 });
 
-const getDraftPosition = (findingCount) => ({
-  x: 130 + (findingCount % 3) * 300,
-  y: 120 + Math.ceil(findingCount / 3) * 210,
-});
+const getFactPosition = (topicIndex, factIndex) => {
+  const topicPosition = getTopicPosition(topicIndex);
+
+  return {
+    x: topicPosition.x + (factIndex % 2) * 320,
+    y: topicPosition.y + 230 + Math.floor(factIndex / 2) * 210,
+  };
+};
+
+const getDraftPosition = (topicIndex, findingCount) => {
+  const topicPosition = getTopicPosition(topicIndex);
+
+  return {
+    x: topicPosition.x + 660,
+    y: topicPosition.y + 230 + findingCount * 70,
+  };
+};
 
 export default function App() {
   const [text, setText] = useState("");
   const [query, setQuery] = useState("");
+  const [sourceTitle, setSourceTitle] = useState("");
+  const [sourcePageCount, setSourcePageCount] = useState(0);
   const [isIngestModalOpen, setIsIngestModalOpen] = useState(false);
-  const [rootNode, setRootNode] = useState(null);
+  const [ingestMode, setIngestMode] = useState("topic");
+  const [researchTopics, setResearchTopics] = useState([]);
+  const [activeTopicId, setActiveTopicId] = useState(null);
   const [activeMode, setActiveMode] = useState("review");
   const [layoutMode, setLayoutMode] = useState("graph");
   const [proposals, setProposals] = useState([]);
   const [findings, setFindings] = useState([]);
   const [socraticDraft, setSocraticDraft] = useState(null);
   const [draftTargetFindingId, setDraftTargetFindingId] = useState(null);
-  const [contextLayers, setContextLayers] = useState([]);
+  const [draftTopicId, setDraftTopicId] = useState(null);
+  const persistedGraphRef = useRef(readGraphUiState());
+  const [contextLayers, setContextLayers] = useState(
+    () => persistedGraphRef.current.contextLayers
+  );
+  const [nodePositions, setNodePositions] = useState(
+    () => persistedGraphRef.current.nodePositions
+  );
+  const [manualEdges, setManualEdges] = useState(
+    () => persistedGraphRef.current.manualEdges
+  );
   const [selectedNodeIds, setSelectedNodeIds] = useState([]);
   const [selectedItem, setSelectedItem] = useState(null);
   const [selectedDraftNodeId, setSelectedDraftNodeId] = useState(null);
   const [inspectorTab, setInspectorTab] = useState("state");
   const [targetLang, setTargetLang] = useState("auto");
+  const [workspaceHistory, setWorkspaceHistory] = useState([]);
   const [error, setError] = useState("");
   const [isLoadingWorkspace, setIsLoadingWorkspace] = useState(true);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [isExtractingSource, setIsExtractingSource] = useState(false);
   const [isReviewing, setIsReviewing] = useState(false);
+  const [isDiscoveringConnections, setIsDiscoveringConnections] = useState(false);
+  const [isCheckingOut, setIsCheckingOut] = useState(false);
   const [committingProposalId, setCommittingProposalId] = useState(null);
   const [isMergingDraft, setIsMergingDraft] = useState(false);
   const layerCounter = useRef(1);
   const spotlightInputRef = useRef(null);
+  const applyMagicLayoutRef = useRef(null);
 
   const [nodes, setNodes, onNodesChange] = useNodesState([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
+
+  const buildUiState = useCallback(() => {
+    const nodePositions = nodes.map((node) => {
+      const absolute = getAbsoluteNodePosition(nodes, node.id);
+      return { id: node.id, x: absolute.x, y: absolute.y };
+    });
+
+    return {
+      mode: layoutMode,
+      selected_node_id: selectedNodeIds?.[0] || null,
+      node_positions: nodePositions,
+    };
+  }, [nodes, layoutMode, selectedNodeIds]);
+
+  const applyRestoredUiState = useCallback(
+    (uiState) => {
+      if (!uiState?.node_positions?.length) return;
+      const restored = {};
+      uiState.node_positions.forEach((position) => {
+        restored[position.id] = { x: Number(position.x), y: Number(position.y) };
+      });
+      setNodePositions(restored);
+    },
+    [setNodePositions]
+  );
+
+  const persistUiState = useCallback(async () => {
+    try {
+      const uiState = buildUiState();
+      await fetch(`${API_URL}/api/workspace/ui-state`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ui_state: uiState }),
+      });
+    } catch {
+      // best-effort: UI persistence must never block the primary action
+    }
+  }, [buildUiState]);
 
   const loadWorkspace = useCallback(async () => {
     try {
@@ -564,6 +736,14 @@ export default function App() {
       const workspace = await response.json();
       setProposals(Array.isArray(workspace.proposals) ? workspace.proposals : []);
       setFindings(Array.isArray(workspace.findings) ? workspace.findings : []);
+      setWorkspaceHistory(Array.isArray(workspace.history) ? workspace.history : []);
+      const nextTopics = Array.isArray(workspace.topics) ? workspace.topics : [];
+      setResearchTopics(nextTopics);
+      setActiveTopicId((currentTopicId) =>
+        nextTopics.some((topic) => topic.id === currentTopicId)
+          ? currentTopicId
+          : nextTopics[0]?.id || null
+      );
     } catch (requestError) {
       setError(
         requestError instanceof Error
@@ -580,12 +760,99 @@ export default function App() {
   }, [loadWorkspace]);
 
   useEffect(() => {
-    if (!isLoadingWorkspace && !rootNode && findings.length === 0) {
+    if (!isLoadingWorkspace && researchTopics.length === 0 && findings.length === 0) {
+      setIngestMode("topic");
       setIsIngestModalOpen(true);
     }
-  }, [findings.length, isLoadingWorkspace, rootNode]);
+  }, [findings.length, isLoadingWorkspace, researchTopics.length]);
+
+  useEffect(() => {
+    window.localStorage.setItem(
+      GRAPH_UI_STORAGE_KEY,
+      JSON.stringify({ nodePositions, manualEdges, contextLayers })
+    );
+  }, [contextLayers, manualEdges, nodePositions]);
+
+  const activeTopic = useMemo(
+    () => researchTopics.find((topic) => topic.id === activeTopicId) || null,
+    [activeTopicId, researchTopics]
+  );
+
+  const openNewTopic = useCallback(() => {
+    setIngestMode("topic");
+    setActiveTopicId(null);
+    setQuery("");
+    setText("");
+    setSourceTitle("");
+    setSourcePageCount(0);
+    setError("");
+    setIsIngestModalOpen(true);
+  }, []);
+
+  const openSourceIngestion = useCallback(
+    (topicId = activeTopicId) => {
+      const topic = researchTopics.find((item) => item.id === topicId);
+
+      if (!topic) {
+        openNewTopic();
+        return;
+      }
+
+      setIngestMode("source");
+      setActiveTopicId(topic.id);
+      setQuery(topic.query || topic.title);
+      setText("");
+      setSourceTitle("");
+      setSourcePageCount(0);
+      setError("");
+      setIsIngestModalOpen(true);
+    },
+    [activeTopicId, openNewTopic, researchTopics]
+  );
+
+  const handleSourceExtraction = useCallback(async (file) => {
+    try {
+      setIsExtractingSource(true);
+      setError("");
+      const formData = new FormData();
+      formData.append("file", file);
+
+      const response = await fetch(`${API_URL}/api/sources/extract`, {
+        method: "POST",
+        body: formData,
+      });
+
+      if (!response.ok) {
+        throw new Error(
+          await readError(response, "Не вдалося витягнути текст із джерела.")
+        );
+      }
+
+      const extractedSource = await response.json();
+      setText((currentText) =>
+        currentText.trim()
+          ? `${currentText.trim()}\n\n${extractedSource.text}`
+          : extractedSource.text
+      );
+      setSourceTitle(extractedSource.source_title || file.name);
+      setSourcePageCount(Number(extractedSource.page_count) || 0);
+    } catch (requestError) {
+      setError(
+        requestError instanceof Error
+          ? requestError.message
+          : "Не вдалося витягнути текст із джерела."
+      );
+    } finally {
+      setIsExtractingSource(false);
+    }
+  }, []);
 
   const handleResearch = useCallback(async () => {
+    if (isExtractingSource) {
+      setError("Дочекайтеся завершення витягування тексту з джерела.");
+      return;
+    }
+
     if (!query.trim() || !text.trim()) {
       setError("Заповніть Active Query та Research Document перед аналізом.");
       return;
@@ -596,6 +863,7 @@ export default function App() {
       setError("");
       setSocraticDraft(null);
       setDraftTargetFindingId(null);
+      await persistUiState();
 
       const response = await fetch(`${API_URL}/api/research`, {
         method: "POST",
@@ -604,6 +872,10 @@ export default function App() {
           query: query.trim(),
           text: text.trim(),
           target_lang: targetLang,
+          topic_id: ingestMode === "source" ? activeTopicId : null,
+          topic_title: ingestMode === "topic" ? query.trim() : null,
+          source_title: sourceTitle.trim() || "Research document",
+          source_page_count: sourcePageCount,
         }),
       });
 
@@ -613,22 +885,37 @@ export default function App() {
 
       const data = await response.json();
       const suggestedLayout =
-        data?.suggested_layout === "tree" || data?.suggested_layout === "graph"
+        ["graph", "tree", "timeline", "comparison"].includes(
+          data?.suggested_layout
+        )
           ? data.suggested_layout
           : null;
 
-      setRootNode({
-        id: `research-root-${Date.now()}`,
-        title: query.trim(),
-        createdAt: new Date().toISOString(),
-      });
+      if (data?.topic?.id) {
+        setActiveTopicId(data.topic.id);
+        setResearchTopics((currentTopics) => {
+          const existingTopicIndex = currentTopics.findIndex(
+            (topic) => topic.id === data.topic.id
+          );
+
+          if (existingTopicIndex < 0) return [...currentTopics, data.topic];
+
+          return currentTopics.map((topic) =>
+            topic.id === data.topic.id ? data.topic : topic
+          );
+        });
+      }
+
       setIsIngestModalOpen(false);
+      setText("");
+      setSourceTitle("");
+      setSourcePageCount(0);
 
       await loadWorkspace();
 
       if (suggestedLayout) {
         setLayoutMode(suggestedLayout);
-        requestAnimationFrame(() => applyMagicLayout(suggestedLayout));
+        requestAnimationFrame(() => applyMagicLayoutRef.current?.(suggestedLayout));
       }
     } catch (requestError) {
       setError(
@@ -639,12 +926,23 @@ export default function App() {
     } finally {
       setIsAnalyzing(false);
     }
-  }, [applyMagicLayout, loadWorkspace, query, targetLang, text]);
+  }, [
+    activeTopicId,
+    ingestMode,
+    isExtractingSource,
+    loadWorkspace,
+    query,
+    sourcePageCount,
+    sourceTitle,
+    targetLang,
+    text,
+  ]);
 
   const handleProposalCommit = async (proposalId) => {
     try {
       setCommittingProposalId(proposalId);
       setError("");
+      await persistUiState();
 
       const response = await fetch(
         `${API_URL}/api/proposals/${encodeURIComponent(proposalId)}/commit`,
@@ -670,6 +968,43 @@ export default function App() {
     }
   };
 
+  const handleDiscoverConnections = useCallback(async () => {
+    if (!activeTopicId) {
+      setError("Спочатку виберіть research topic для пошуку зв’язків.");
+      return;
+    }
+
+    try {
+      setIsDiscoveringConnections(true);
+      setError("");
+      await persistUiState();
+      const response = await fetch(
+        `${API_URL}/api/topics/${encodeURIComponent(activeTopicId)}/relations/discover`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ target_lang: targetLang }),
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error(
+          await readError(response, "Не вдалося знайти зв’язки між фактами.")
+        );
+      }
+
+      await loadWorkspace();
+    } catch (requestError) {
+      setError(
+        requestError instanceof Error
+          ? requestError.message
+          : "Не вдалося знайти зв’язки між фактами."
+      );
+    } finally {
+      setIsDiscoveringConnections(false);
+    }
+  }, [activeTopicId, loadWorkspace, targetLang]);
+
   const handleSocraticReview = useCallback(async () => {
     const selectedNode = nodes.find(
       (node) => node.selected && node.type === "fact"
@@ -684,8 +1019,9 @@ export default function App() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           target_lang: targetLang,
-          fact_id: selectedNode?.id,
+          fact_id: selectedNode?.data?.finding?.id,
           fact_text: selectedNode?.data?.label,
+          topic_id: selectedNode?.data?.finding?.topic_id || activeTopicId,
         }),
       });
 
@@ -698,6 +1034,7 @@ export default function App() {
       const draft = await response.json();
 
       setDraftTargetFindingId(selectedNode?.id || null);
+      setDraftTopicId(selectedNode?.data?.finding?.topic_id || activeTopicId || null);
       setSocraticDraft(draft);
       setSelectedItem({ kind: "draft", item: draft });
       setInspectorTab("state");
@@ -710,7 +1047,7 @@ export default function App() {
     } finally {
       setIsReviewing(false);
     }
-  }, [nodes, targetLang]);
+  }, [activeTopicId, nodes, targetLang]);
 
   const handleSocraticCommit = useCallback(async () => {
     if (!socraticDraft?.proposed_hypothesis) return;
@@ -718,11 +1055,14 @@ export default function App() {
     try {
       setIsMergingDraft(true);
       setError("");
-
+      await persistUiState();
       const response = await fetch(`${API_URL}/api/socratic/commit`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(socraticDraft.proposed_hypothesis),
+        body: JSON.stringify({
+          ...socraticDraft.proposed_hypothesis,
+          topic_id: draftTopicId || activeTopicId,
+        }),
       });
 
       if (!response.ok) {
@@ -733,6 +1073,7 @@ export default function App() {
 
       setSocraticDraft(null);
       setDraftTargetFindingId(null);
+      setDraftTopicId(null);
       setSelectedItem(null);
       await loadWorkspace();
     } catch (requestError) {
@@ -744,38 +1085,54 @@ export default function App() {
     } finally {
       setIsMergingDraft(false);
     }
-  }, [loadWorkspace, socraticDraft]);
+  }, [activeTopicId, draftTopicId, loadWorkspace, socraticDraft]);
 
   const handleRejectDraft = useCallback(() => {
     setSocraticDraft(null);
     setDraftTargetFindingId(null);
+    setDraftTopicId(null);
     setSelectedDraftNodeId(null);
     setSelectedItem((current) => (current?.kind === "draft" ? null : current));
   }, []);
 
   useEffect(() => {
-    const rootFlowNode = rootNode
-      ? [
-          {
-            id: rootNode.id,
-            type: "root",
-            position: { x: 520, y: 60 },
-            data: {
-              root: rootNode,
-              onOpenIngest: () => setIsIngestModalOpen(true),
-            },
-            zIndex: 3,
-          },
-        ]
-      : [];
-
-    const baseFactNodes = findings.map((finding, index) => ({
-      id: `finding-${finding.id}`,
-      type: "fact",
-      position: getFactPosition(index),
-      data: { finding, label: finding.details },
-      zIndex: 1,
+    const topicIndexById = new Map(
+      researchTopics.map((topic, index) => [topic.id, index])
+    );
+    const topicFlowNodes = researchTopics.map((topic, index) => ({
+      id: `topic-${topic.id}`,
+      type: "root",
+      position: getSavedPosition(
+        nodePositions,
+        `topic-${topic.id}`,
+        getTopicPosition(index)
+      ),
+      data: {
+        root: topic,
+        onOpenIngest: () => openSourceIngestion(topic.id),
+      },
+      zIndex: 3,
     }));
+
+    const factCountByTopic = new Map();
+    const baseFactNodes = findings.map((finding, index) => {
+      const topicIndex = topicIndexById.get(finding.topic_id) ?? 0;
+      const factIndex = factCountByTopic.get(finding.topic_id) ?? index;
+      factCountByTopic.set(finding.topic_id, factIndex + 1);
+      const nodeId = `finding-${finding.id}`;
+
+      return {
+        id: nodeId,
+        type: "fact",
+        position: getSavedPosition(
+          nodePositions,
+          nodeId,
+          getFactPosition(topicIndex, factIndex)
+        ),
+        data: { finding, label: finding.details },
+        zIndex: 1,
+      };
+    });
 
     const layersWithMembers = contextLayers
       .map((layer) => ({
@@ -804,6 +1161,7 @@ export default function App() {
       return {
         id: layer.id,
         type: "contextLayer",
+        draggable: false,
         position: frame.position,
         style: { width: frame.width, height: frame.height },
         data: { label: layer.label, memberCount: layer.members.length },
@@ -830,12 +1188,17 @@ export default function App() {
     const draftTarget = findings.find(
       (finding) => `finding-${finding.id}` === draftTargetFindingId
     );
+    const draftTopicIndex = topicIndexById.get(draftTarget?.topic_id || activeTopicId) ?? 0;
     const draftNode = socraticDraft
       ? [
           {
             id: "socratic-draft",
             type: "draft",
-            position: getDraftPosition(findings.length),
+            position: getSavedPosition(
+              nodePositions,
+              "socratic-draft",
+              getDraftPosition(draftTopicIndex, findings.length)
+            ),
             data: {
               draft: socraticDraft,
               targetTitle: draftTarget?.title,
@@ -848,15 +1211,18 @@ export default function App() {
         ]
       : [];
 
-    setNodes([...rootFlowNode, ...layerNodes, ...factNodes, ...draftNode]);
+    setNodes([...topicFlowNodes, ...layerNodes, ...factNodes, ...draftNode]);
   }, [
+    activeTopicId,
     contextLayers,
     draftTargetFindingId,
     findings,
     handleRejectDraft,
     handleSocraticCommit,
     isMergingDraft,
-    rootNode,
+    nodePositions,
+    openSourceIngestion,
+    researchTopics,
     setNodes,
     socraticDraft,
   ]);
@@ -864,23 +1230,52 @@ export default function App() {
   useEffect(() => {
     const findingIds = new Set(findings.map((finding) => finding.id));
     const findingNodeIds = new Set(findings.map((finding) => `finding-${finding.id}`));
+    const topicNodeIds = new Set(researchTopics.map((topic) => `topic-${topic.id}`));
+    const topicEdges = findings
+      .filter(
+        (finding) =>
+          finding.topic_id && topicNodeIds.has(`topic-${finding.topic_id}`)
+      )
+      .map((finding) => ({
+        id: `topic-${finding.topic_id}-finding-${finding.id}`,
+        source: `topic-${finding.topic_id}`,
+        target: `finding-${finding.id}`,
+        label: "evidence trail",
+        type: "smoothstep",
+        markerEnd: { type: MarkerType.ArrowClosed, color: "#38bdf8" },
+        style: { stroke: "#38bdf8", strokeWidth: 1.4, opacity: 0.82 },
+        labelStyle: { fill: "#7dd3fc", fontSize: 10 },
+        labelBgStyle: { fill: "#0f172a", fillOpacity: 0.92 },
+        data: { system: "topic" },
+      }));
     const relationEdges = findings.flatMap((finding) =>
       (finding.relations || [])
         .filter((relation) => findingIds.has(relation.target_id))
-        .map((relation) => ({
-          id: `relation-${finding.id}-${relation.target_id}-${relation.type}`,
-          source: `finding-${finding.id}`,
-          target: `finding-${relation.target_id}`,
-          label: relation.type,
-          type: "smoothstep",
-          animated: true,
-          markerEnd: { type: MarkerType.ArrowClosed, color: "#22d3ee" },
-          style: { stroke: "#22d3ee", strokeWidth: 1.5 },
-          labelStyle: { fill: "#94a3b8", fontSize: 11 },
-          labelBgStyle: { fill: "#0f172a", fillOpacity: 0.92 },
-          data: { system: "relation" },
-        }))
-    );
+        .map((relation) => {
+          const isManualRelation = relation.origin === "manual";
+          const edgeColor = isManualRelation ? "#a78bfa" : "#22d3ee";
+
+          return {
+            id: `relation-${finding.id}-${relation.target_id}-${relation.type}`,
+            source: `finding-${finding.id}`,
+            target: `finding-${relation.target_id}`,
+            label: relation.confidence_score
+              ? `${relation.type} · ${relation.confidence_score}%`
+              : relation.type,
+            type: "smoothstep",
+            animated: !isManualRelation,
+            deletable: isManualRelation,
+            markerEnd: { type: MarkerType.ArrowClosed, color: edgeColor },
+            style: { stroke: edgeColor, strokeWidth: isManualRelation ? 2 : 1.5 },
+            labelStyle: { fill: isManualRelation ? "#c4b5fd" : "#94a3b8", fontSize: 11 },
+            labelBgStyle: { fill: "#0f172a", fillOpacity: 0.92 },
+            data: {
+              system: isManualRelation ? "manual-persisted" : "relation",
+              sourceFindingId: finding.id,
+              targetFindingId: relation.target_id,
+            },
+          };
+        }));
 
     const conflictEdge =
       socraticDraft && draftTargetFindingId && findingNodeIds.has(draftTargetFindingId)
@@ -906,21 +1301,119 @@ export default function App() {
         : [];
 
     const validNodeIds = new Set([
+      ...researchTopics.map((topic) => `topic-${topic.id}`),
       ...findings.map((finding) => `finding-${finding.id}`),
       ...(socraticDraft ? ["socratic-draft"] : []),
     ]);
 
-    setEdges((currentEdges) => {
-      const manualEdges = currentEdges.filter(
+    setEdges(() => {
+      const validManualEdges = manualEdges.filter(
         (edge) =>
-          edge.data?.system === "manual" &&
           validNodeIds.has(edge.source) &&
           validNodeIds.has(edge.target)
       );
 
-      return [...relationEdges, ...conflictEdge, ...manualEdges];
+      return [...topicEdges, ...relationEdges, ...conflictEdge, ...validManualEdges];
     });
-  }, [draftTargetFindingId, findings, setEdges, socraticDraft]);
+  }, [
+    draftTargetFindingId,
+    findings,
+    manualEdges,
+    researchTopics,
+    setEdges,
+    socraticDraft,
+  ]);
+
+  const handleNodesChange = useCallback(
+    (changes) => {
+      onNodesChange(changes);
+      setNodePositions((currentPositions) => {
+        let hasPositionChange = false;
+        const nextPositions = { ...currentPositions };
+
+        changes.forEach((change) => {
+          if (
+            change.type !== "position" ||
+            !change.position ||
+            !isUsablePosition(change.position)
+          ) {
+            return;
+          }
+
+          // Ignore movement of the contextLayer frame itself.
+          const changedNode = nodes.find((node) => node.id === change.id);
+          if (changedNode?.type === "contextLayer") return;
+
+          nextPositions[change.id] = {
+            x: Number(change.position.x),
+            y: Number(change.position.y),
+          };
+          hasPositionChange = true;
+        });
+
+        return hasPositionChange ? nextPositions : currentPositions;
+      });
+    },
+    [nodes, onNodesChange]
+  );
+
+  const removePersistedManualRelation = useCallback(
+    async (sourceFindingId, targetFindingId) => {
+      try {
+        setError("");
+        await persistUiState();
+        const response = await fetch(
+          `${API_URL}/api/findings/${encodeURIComponent(sourceFindingId)}/relations/${encodeURIComponent(targetFindingId)}`,
+          { method: "DELETE" }
+        );
+
+        if (!response.ok) {
+          throw new Error(
+            await readError(response, "Не вдалося видалити ручний зв’язок.")
+          );
+        }
+
+        await loadWorkspace();
+      } catch (requestError) {
+        setError(
+          requestError instanceof Error
+            ? requestError.message
+            : "Не вдалося видалити ручний зв’язок."
+        );
+        await loadWorkspace();
+      }
+    },
+    [loadWorkspace]
+  );
+
+  const handleEdgesChange = useCallback(
+    (changes) => {
+      onEdgesChange(changes);
+      const removedEdgeIds = changes
+        .filter((change) => change.type === "remove")
+        .map((change) => change.id);
+
+      if (removedEdgeIds.length > 0) {
+        setManualEdges((currentEdges) =>
+          currentEdges.filter((edge) => !removedEdgeIds.includes(edge.id))
+        );
+
+        edges
+          .filter(
+            (edge) =>
+              removedEdgeIds.includes(edge.id) &&
+              edge.data?.system === "manual-persisted"
+          )
+          .forEach((edge) => {
+            void removePersistedManualRelation(
+              edge.data.sourceFindingId,
+              edge.data.targetFindingId
+            );
+          });
+      }
+    },
+    [edges, onEdgesChange, removePersistedManualRelation]
+  );
 
   const handleConnect = useCallback(
     (connection) => {
@@ -928,31 +1421,75 @@ export default function App() {
         return;
       }
 
-      setEdges((currentEdges) =>
-        addEdge(
-          {
-            ...connection,
-            id: `manual-${connection.source}-${connection.target}-${Date.now()}`,
-            type: "smoothstep",
-            label: "manual link",
-            markerEnd: { type: MarkerType.ArrowClosed, color: "#a78bfa" },
-            style: { stroke: "#a78bfa", strokeWidth: 2 },
-            labelStyle: { fill: "#c4b5fd", fontSize: 11 },
-            labelBgStyle: { fill: "#0f172a", fillOpacity: 0.92 },
-            data: { system: "manual" },
-          },
-          currentEdges
-        )
-      );
+      const edgeId = `manual-${connection.source}-${connection.target}-${Date.now()}`;
+      const nextManualEdge = {
+        ...connection,
+        id: edgeId,
+        type: "smoothstep",
+        label: "manual link",
+        markerEnd: { type: MarkerType.ArrowClosed, color: "#a78bfa" },
+        style: { stroke: "#a78bfa", strokeWidth: 2 },
+        labelStyle: { fill: "#c4b5fd", fontSize: 11 },
+        labelBgStyle: { fill: "#0f172a", fillOpacity: 0.92 },
+        data: { system: "manual" },
+      };
+
+      setManualEdges((currentEdges) => {
+        const duplicateExists = currentEdges.some(
+          (edge) => edge.source === connection.source && edge.target === connection.target
+        );
+
+        return duplicateExists ? currentEdges : addEdge(nextManualEdge, currentEdges);
+      });
+
+      if (
+        connection.source.startsWith("finding-") &&
+        connection.target.startsWith("finding-")
+      ) {
+        const sourceFindingId = connection.source.replace("finding-", "");
+        const targetFindingId = connection.target.replace("finding-", "");
+
+        void (async () => {
+          try {
+            await persistUiState();
+            const response = await fetch(
+              `${API_URL}/api/findings/${encodeURIComponent(sourceFindingId)}/relations`,
+              {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ target_id: targetFindingId, type: "manual link" }),
+              }
+            );
+
+            if (!response.ok) {
+              throw new Error(
+                await readError(response, "Не вдалося зберегти ручний зв’язок.")
+              );
+            }
+
+            setManualEdges((currentEdges) =>
+              currentEdges.filter((edge) => edge.id !== edgeId)
+            );
+            await loadWorkspace();
+          } catch (requestError) {
+            setError(
+              requestError instanceof Error
+                ? requestError.message
+                : "Ручний зв’язок збережено лише локально."
+            );
+          }
+        })();
+      }
     },
-    [setEdges]
+    [loadWorkspace]
   );
 
   const handleNodeClick = useCallback((event, node) => {
     event.stopPropagation();
 
     if (node.type === "root") {
-      setIsIngestModalOpen(true);
+      setActiveTopicId(node.data.root.id);
+      openSourceIngestion(node.data.root.id);
       return;
     }
 
@@ -968,7 +1505,7 @@ export default function App() {
       setSelectedDraftNodeId(null);
       setInspectorTab("state");
     }
-  }, []);
+  }, [openSourceIngestion]);
 
   const handleSelectionChange = useCallback(({ nodes: selectedNodes }) => {
     setSelectedNodeIds(
@@ -999,7 +1536,7 @@ export default function App() {
 
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") {
         event.preventDefault();
-        setIsIngestModalOpen(true);
+        openNewTopic();
         requestAnimationFrame(() => {
           spotlightInputRef.current?.focus();
           spotlightInputRef.current?.select();
@@ -1019,7 +1556,7 @@ export default function App() {
 
     window.addEventListener("keydown", handleHotkey);
     return () => window.removeEventListener("keydown", handleHotkey);
-  }, [handleRejectDraft, selectedDraftNodeId]);
+  }, [handleRejectDraft, openNewTopic, selectedDraftNodeId]);
 
   const handleGroupSelection = useCallback(() => {
     const groupableNodes = nodes.filter(
@@ -1047,123 +1584,87 @@ export default function App() {
   }, [nodes, selectedNodeIds]);
 
   function applyMagicLayout(requestedLayoutMode = layoutMode) {
-      const activeLayoutMode = requestedLayoutMode === "tree" ? "tree" : "graph";
+    const activeLayoutMode = ["graph", "tree", "timeline", "comparison"].includes(
+      requestedLayoutMode
+    )
+      ? requestedLayoutMode
+      : "graph";
+    const nextPositions = {};
+    let treeOffsetY = 60;
 
-      setNodes((currentNodes) => {
-        const nextPositions = new Map();
-        const rootNode = currentNodes.find((node) => node.type === "root");
-        const rootPosition = { x: 100, y: 50 };
+    researchTopics.forEach((topic, topicIndex) => {
+      const topicNodeId = `topic-${topic.id}`;
+      const topicFindings = findings.filter((finding) => finding.topic_id === topic.id);
+      const graphTopicPosition = getTopicPosition(topicIndex);
+      const rootPosition =
+        activeLayoutMode === "tree"
+          ? { x: 160, y: treeOffsetY }
+          : activeLayoutMode === "timeline"
+            ? { x: 100, y: 110 + topicIndex * 520 }
+            : graphTopicPosition;
 
-        if (rootNode) {
-          nextPositions.set(rootNode.id, rootPosition);
-        }
+      nextPositions[topicNodeId] = rootPosition;
 
-        const topLevelNodes = currentNodes.filter(
-          (node) =>
-            node.type === "contextLayer" ||
-            (node.type === "fact" && !node.parentId)
-        );
+      topicFindings.forEach((finding, factIndex) => {
+        const nodeId = `finding-${finding.id}`;
+        const position =
+          activeLayoutMode === "tree"
+            ? { x: 160, y: rootPosition.y + 220 + factIndex * 230 }
+            : activeLayoutMode === "timeline"
+              ? { x: rootPosition.x + 340 + factIndex * 360, y: rootPosition.y }
+              : activeLayoutMode === "comparison"
+                ? {
+                    x: rootPosition.x + (factIndex % 2) * 440,
+                    y: rootPosition.y + 230 + Math.floor(factIndex / 2) * 230,
+                  }
+                : {
+                x: rootPosition.x + (factIndex % 2) * 330,
+                y: rootPosition.y + 230 + Math.floor(factIndex / 2) * 210,
+                  };
 
-        topLevelNodes.forEach((node, index) => {
-          let newX;
-          let newY;
-
-          if (activeLayoutMode === "tree") {
-            newX = 100;
-            newY = 250 + index * 250;
-          } else {
-            newX = 100 + (index % 3) * 350;
-            newY = 300 + Math.floor(index / 3) * 200;
-          }
-
-          if (isNaN(newX)) newX = 100;
-          if (isNaN(newY)) newY = 100;
-
-          nextPositions.set(node.id, { x: newX, y: newY });
-        });
-
-        const groupedFacts = new Map();
-
-        currentNodes
-          .filter((node) => node.type === "fact" && node.parentId)
-          .forEach((node) => {
-            const siblings = groupedFacts.get(node.parentId) || [];
-            siblings.push(node);
-            groupedFacts.set(node.parentId, siblings);
-          });
-
-        groupedFacts.forEach((siblings) => {
-          siblings.forEach((node, index) => {
-            let newX = 42 + (index % 2) * 270;
-            let newY = 82 + Math.floor(index / 2) * 165;
-
-            if (isNaN(newX)) newX = 100;
-            if (isNaN(newY)) newY = 100;
-
-            nextPositions.set(node.id, { x: newX, y: newY });
-          });
-        });
-
-        const positionedNodes = currentNodes.map((node) => {
-          const position = nextPositions.get(node.id) || node.position || { x: 100, y: 100 };
-          let newX = Number(position.x);
-          let newY = Number(position.y);
-
-          if (isNaN(newX)) newX = 100;
-          if (isNaN(newY)) newY = 100;
-
-          return {
-            ...node,
-            position: { x: newX, y: newY },
-          };
-        });
-
-        const nodeById = new Map(positionedNodes.map((node) => [node.id, node]));
-
-        const getAbsolutePosition = (node) => {
-          const parent = node.parentId ? nodeById.get(node.parentId) : null;
-          const nodeX = Number(node.position?.x);
-          const nodeY = Number(node.position?.y);
-          const parentX = Number(parent?.position?.x);
-          const parentY = Number(parent?.position?.y);
-
-          return {
-            x: (isNaN(nodeX) ? 100 : nodeX) + (parent ? (isNaN(parentX) ? 0 : parentX) : 0),
-            y: (isNaN(nodeY) ? 100 : nodeY) + (parent ? (isNaN(parentY) ? 0 : parentY) : 0),
-          };
+        nextPositions[nodeId] = {
+          x: Number.isFinite(position.x) ? position.x : 100,
+          y: Number.isFinite(position.y) ? position.y : 100,
         };
-
-        return positionedNodes.map((node, index) => {
-          if (node.type !== "draft") return node;
-
-          const target = draftTargetFindingId
-            ? nodeById.get(draftTargetFindingId)
-            : null;
-          const targetPosition = target ? getAbsolutePosition(target) : null;
-          let newX;
-          let newY;
-
-          if (targetPosition) {
-            newX = targetPosition.x + 320;
-            newY = targetPosition.y + 20;
-          } else if (activeLayoutMode === "tree") {
-            newX = 450;
-            newY = 250 + index * 250;
-          } else {
-            newX = 100 + (index % 3) * 350;
-            newY = 300 + Math.floor(index / 3) * 200;
-          }
-
-          if (isNaN(newX)) newX = 100;
-          if (isNaN(newY)) newY = 100;
-
-          return {
-            ...node,
-            position: { x: newX, y: newY },
-          };
-        });
       });
+
+      if (activeLayoutMode === "tree") {
+        treeOffsetY += Math.max(topicFindings.length, 1) * 230 + 330;
+      }
+    });
+
+    if (socraticDraft) {
+      const targetPosition = draftTargetFindingId
+        ? nextPositions[draftTargetFindingId] || nodePositions[draftTargetFindingId]
+        : null;
+      const fallbackTopicIndex = Math.max(
+        0,
+        researchTopics.findIndex((topic) => topic.id === activeTopicId)
+      );
+      const fallback = getDraftPosition(fallbackTopicIndex, findings.length);
+      const position = targetPosition
+        ? { x: Number(targetPosition.x) + 340, y: Number(targetPosition.y) + 20 }
+        : fallback;
+
+      nextPositions["socratic-draft"] = {
+        x: Number.isFinite(position.x) ? position.x : 100,
+        y: Number.isFinite(position.y) ? position.y : 100,
+      };
+    }
+
+    setNodePositions((currentPositions) => ({ ...currentPositions, ...nextPositions }));
+    setNodes((currentNodes) =>
+      currentNodes.map((node) => {
+        const position = nextPositions[node.id];
+
+        if (!position || node.type === "contextLayer") return node;
+
+        return { ...node, position };
+      })
+    );
   }
+
+  applyMagicLayoutRef.current = applyMagicLayout;
 
   const generateMarkdownReport = useCallback(() => {
     const verifiedFacts = nodes.filter(
@@ -1232,25 +1733,57 @@ export default function App() {
       : selectedItem.item.details
     : "Виберіть proposal у AI Inbox або verified fact на канвасі, щоб переглянути його Context Git State.";
 
-  const historyWorkspace =
-    selectedItem?.kind !== "draft"
-      ? selectedItem?.item?.commit_state?.workspace || "Committed"
-      : "Committed";
+  const handleCheckout = useCallback(
+    async (revision) => {
+      try {
+        setIsCheckingOut(true);
+        setError("");
+        const uiState = buildUiState();
+        const response = await fetch(
+          `${API_URL}/api/workspace/checkout/${encodeURIComponent(revision)}`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ ui_state: uiState }),
+          }
+        );
+
+        if (!response.ok) {
+          throw new Error(await readError(response, "Не вдалося відновити revision."));
+        }
+
+        const data = await response.json();
+        if (data?.ui_state) applyRestoredUiState(data.ui_state);
+
+        setSelectedItem(null);
+        setSocraticDraft(null);
+        setDraftTargetFindingId(null);
+        setDraftTopicId(null);
+        await loadWorkspace();
+      } catch (requestError) {
+        setError(
+          requestError instanceof Error
+            ? requestError.message
+            : "Не вдалося відновити revision."
+        );
+      } finally {
+        setIsCheckingOut(false);
+      }
+    },
+    [applyRestoredUiState, buildUiState, loadWorkspace]
+  );
 
   const historyEntries = useMemo(
+    () => [...workspaceHistory].sort((left, right) => right.revision - left.revision),
+    [workspaceHistory]
+  );
+
+  const visibleProposals = useMemo(
     () =>
-      [...findings, ...proposals]
-        .filter((item) => item.commit_state?.workspace === historyWorkspace)
-        .map((item) => ({
-          id: item.id,
-          title: item.title,
-          status: item.status,
-          revision: item.commit_state.revision,
-          updatedAt: item.commit_state.updated_at,
-          workspace: item.commit_state.workspace,
-        }))
-        .sort((left, right) => right.revision - left.revision),
-    [findings, historyWorkspace, proposals]
+      activeTopicId
+        ? proposals.filter((proposal) => proposal.topic_id === activeTopicId)
+        : proposals,
+    [activeTopicId, proposals]
   );
 
   return (
@@ -1265,7 +1798,7 @@ export default function App() {
             setLayoutMode(mode);
             applyMagicLayout(mode);
           }}
-          onOpenIngest={() => setIsIngestModalOpen(true)}
+          onOpenIngest={openNewTopic}
           onRunCopilot={handleSocraticReview}
           onMagicLayout={() => applyMagicLayout()}
           onDownloadReport={generateMarkdownReport}
@@ -1282,7 +1815,7 @@ export default function App() {
               <div className="mt-1 flex items-center justify-between">
                 <h2 className="font-bold text-white">Proposals</h2>
                 <span className="rounded-full bg-orange-400/10 px-2 py-0.5 text-xs font-bold text-orange-300">
-                  {proposals.length}
+                  {visibleProposals.length}
                 </span>
               </div>
             </div>
@@ -1290,12 +1823,14 @@ export default function App() {
             <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-3">
               {isLoadingWorkspace ? (
                 <p className="py-8 text-center text-sm text-slate-500">Loading inbox...</p>
-              ) : proposals.length === 0 ? (
+              ) : visibleProposals.length === 0 ? (
                 <div className="rounded-xl border border-dashed border-slate-700 p-4 text-center text-sm text-slate-500">
-                  Inbox порожній. Запустіть AI-аналіз, щоб створити proposals.
+                  {activeTopic
+                    ? "Для цієї теми ще немає proposals. Додайте paper або інше джерело."
+                    : "Inbox порожній. Створіть research topic, щоб почати аналіз."}
                 </div>
               ) : (
-                proposals.map((proposal) => (
+                visibleProposals.map((proposal) => (
                   <article
                     key={proposal.id}
                     role="button"
@@ -1329,6 +1864,11 @@ export default function App() {
                     <p className="mt-1 text-[10px] font-bold uppercase tracking-wider text-slate-500">
                       Intrinsic Score
                     </p>
+                    {proposal.source_title && (
+                      <p className="mt-2 truncate text-[10px] font-semibold text-cyan-300/80">
+                        Source: {proposal.source_title}
+                      </p>
+                    )}
                     <p className="mt-2 line-clamp-2 text-xs leading-5 text-slate-400">
                       {proposal.details}
                     </p>
@@ -1352,12 +1892,44 @@ export default function App() {
           </aside>
 
           <section className="relative min-h-0 bg-[#0B1120]" aria-label="Knowledge graph canvas">
-            <div className="pointer-events-none absolute left-4 top-4 z-10 rounded-lg border border-slate-700/80 bg-slate-900/90 px-3 py-2 backdrop-blur">
+            <div className="absolute left-4 top-4 z-10 max-w-[calc(100%-2rem)] rounded-lg border border-slate-700/80 bg-slate-900/90 px-3 py-2 backdrop-blur">
               <p className="text-[10px] font-extrabold uppercase tracking-[0.16em] text-cyan-400">
-                Workspace Graph
+                Active research topic
               </p>
-              <p className="mt-0.5 text-xs text-slate-400">
-                Drag facts, connect handles, then drag-select nodes to build a Context Layer.
+              <div className="mt-1.5 flex flex-wrap items-center gap-2">
+                <select
+                  value={activeTopicId || ""}
+                  onChange={(event) => setActiveTopicId(event.target.value || null)}
+                  className="max-w-56 rounded-md border border-slate-700 bg-slate-950 px-2 py-1.5 text-xs font-semibold text-slate-200 outline-none focus:border-cyan-400"
+                  aria-label="Active research topic"
+                >
+                  <option value="" disabled>
+                    Select a topic
+                  </option>
+                  {researchTopics.map((topic) => (
+                    <option key={topic.id} value={topic.id}>
+                      {topic.title}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  onClick={openNewTopic}
+                  className="rounded-md border border-cyan-400/50 bg-cyan-400/10 px-2.5 py-1.5 text-xs font-extrabold text-cyan-200 transition hover:bg-cyan-400 hover:text-slate-950"
+                >
+                  + New topic
+                </button>
+                <button
+                  type="button"
+                  onClick={() => openSourceIngestion()}
+                  disabled={!activeTopic}
+                  className="rounded-md border border-emerald-400/50 bg-emerald-400/10 px-2.5 py-1.5 text-xs font-extrabold text-emerald-200 transition hover:bg-emerald-400 hover:text-slate-950 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  + Add paper
+                </button>
+              </div>
+              <p className="mt-2 text-xs text-slate-400">
+                Topic roots create evidence trails automatically. Switch to Manual to draw your own links.
               </p>
             </div>
 
@@ -1382,8 +1954,8 @@ export default function App() {
               nodesDraggable={activeMode === "manual"}
               nodesConnectable={activeMode === "manual"}
               elementsSelectable={true}
-              onNodesChange={onNodesChange}
-              onEdgesChange={onEdgesChange}
+              onNodesChange={handleNodesChange}
+              onEdgesChange={handleEdgesChange}
               onConnect={handleConnect}
               onNodeClick={handleNodeClick}
               onPaneClick={handlePaneClick}
@@ -1459,6 +2031,16 @@ export default function App() {
                   📥 Download Report
                 </button>
               </div>
+              <button
+                type="button"
+                onClick={handleDiscoverConnections}
+                disabled={isDiscoveringConnections || !activeTopicId}
+                className="mt-2 w-full rounded-lg border border-fuchsia-400/60 bg-fuchsia-400/10 px-3 py-2.5 text-xs font-extrabold text-fuchsia-200 transition hover:bg-fuchsia-400 hover:text-slate-950 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                {isDiscoveringConnections
+                  ? "Discovering evidence links..."
+                  : "✦ Discover Connections"}
+              </button>
             </div>
 
             <div className="min-h-0 flex-1 overflow-y-auto p-4">
@@ -1518,10 +2100,10 @@ export default function App() {
                   <div className="flex items-start justify-between gap-3">
                     <div>
                       <h3 className="text-[10px] font-extrabold uppercase tracking-[0.16em] text-cyan-300">
-                        Local Commit History
+                        Workspace Snapshots
                       </h3>
                       <p className="mt-1 text-xs text-slate-500">
-                        Workspace: {historyWorkspace}
+                        Restore a previous verified Context Git state.
                       </p>
                     </div>
                     <span className="rounded-full bg-cyan-400/10 px-2 py-1 text-[10px] font-bold text-cyan-300">
@@ -1531,36 +2113,36 @@ export default function App() {
 
                   {historyEntries.length === 0 ? (
                     <p className="mt-4 text-sm text-slate-500">
-                      Локальна історія поки що не має commit revisions.
+                      Перший snapshot з’явиться після аналізу, Merge або зміни зв’язку.
                     </p>
                   ) : (
                     <ol className="mt-4 space-y-3 border-l border-cyan-500/30 pl-4">
                       {historyEntries.map((entry) => (
-                        <li key={`${entry.id}-${entry.revision}`} className="relative">
+                        <li key={entry.revision} className="relative">
                           <span className="absolute -left-[1.34rem] top-1.5 h-2.5 w-2.5 rounded-full border-2 border-slate-950 bg-cyan-400" />
                           <div className="rounded-lg border border-slate-800 bg-slate-900/70 p-3">
                             <div className="flex items-start justify-between gap-2">
-                              <p className="text-sm font-bold text-slate-100">{entry.title}</p>
+                              <p className="text-sm font-bold text-slate-100">{entry.action}</p>
                               <span className="shrink-0 text-xs font-extrabold text-cyan-300">
                                 r{entry.revision}
                               </span>
                             </div>
                             <p className="mt-1 text-xs text-slate-500">
-                              {entry.status} · {entry.updatedAt || "timestamp unavailable"}
+                              {entry.timestamp || "timestamp unavailable"}
                             </p>
+                            <button
+                              type="button"
+                              onClick={() => handleCheckout(entry.revision)}
+                              disabled={isCheckingOut}
+                              className="mt-3 rounded-md border border-cyan-400/50 bg-cyan-400/10 px-2.5 py-1.5 text-xs font-bold text-cyan-200 transition hover:bg-cyan-400 hover:text-slate-950 disabled:cursor-not-allowed disabled:opacity-50"
+                            >
+                              {isCheckingOut ? "Restoring..." : `Restore r${entry.revision}`}
+                            </button>
                           </div>
                         </li>
                       ))}
                     </ol>
                   )}
-
-                  <button
-                    type="button"
-                    disabled
-                    className="mt-5 w-full cursor-not-allowed rounded-lg border border-slate-700 bg-slate-800 px-3 py-2.5 text-sm font-bold text-slate-500"
-                  >
-                    Checkout (Rollback)
-                  </button>
                 </section>
               ) : !selectedItem ? (
                 <div className="mt-4 rounded-xl border border-dashed border-slate-700 p-4 text-sm leading-6 text-slate-500">
@@ -1598,6 +2180,16 @@ export default function App() {
                             <p className="whitespace-pre-wrap text-sm italic leading-6 text-slate-200">
                               “{evidence.quote}”
                             </p>
+                            {(evidence.page_number || evidence.start_char !== undefined) && (
+                              <p className="mt-2 text-[10px] font-semibold uppercase tracking-wide text-cyan-300/80">
+                                {evidence.page_number
+                                  ? `Page ${evidence.page_number}`
+                                  : "Text source"}
+                                {evidence.start_char !== undefined
+                                  ? ` · char ${evidence.start_char}`
+                                  : ""}
+                              </p>
+                            )}
                           </blockquote>
                         ))}
                       </div>
@@ -1649,10 +2241,18 @@ export default function App() {
       </div>
       <IngestResearchModal
         isOpen={isIngestModalOpen}
+        ingestMode={ingestMode}
+        activeTopicTitle={activeTopic?.title}
         query={query}
         setQuery={setQuery}
         text={text}
         setText={setText}
+        sourceTitle={sourceTitle}
+        setSourceTitle={setSourceTitle}
+        sourcePageCount={sourcePageCount}
+        setSourcePageCount={setSourcePageCount}
+        isExtractingSource={isExtractingSource}
+        onExtractFile={handleSourceExtraction}
         isAnalyzing={isAnalyzing}
         onAnalyze={handleResearch}
         onClose={() => setIsIngestModalOpen(false)}
