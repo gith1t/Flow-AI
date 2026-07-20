@@ -10,3 +10,8 @@ __pycache__/
 
 # Local runtime state
 workspace_state.json
+workspace_state.json.bak
+workspace_state.json.tmp
+
+# One-command local startup logs
+.flow-ai-logs/

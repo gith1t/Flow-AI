@@ -7,28 +7,54 @@ import os
 import re
 import copy
 import hashlib
-from datetime import datetime
+import shutil
+import unicodedata
+from datetime import datetime, timezone
 from io import BytesIO
+from uuid import uuid4
 from openai import OpenAI
 from dotenv import load_dotenv
-from pypdf import PdfReader
 
 app = FastAPI(title="Yomirai Backend Engine")
 
 # backend/main.py -> backend/.env
-load_dotenv(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env"))
+ENV_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
+load_dotenv(ENV_FILE)
 
 # CORS setup
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
+    allow_origins=[],
+    allow_origin_regex=r"^https?://(localhost|127\.0\.0\.1)(?::\d+)?$",
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Ініціалізація клієнта OpenAI (зчитає ключ із середовища)
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+# The application may start without a key so local source extraction remains available.
+client: Optional[OpenAI] = None
+
+
+def has_openai_key() -> bool:
+    return bool((os.getenv("OPENAI_API_KEY") or "").strip())
+
+
+def get_openai_client(session_api_key: Optional[str] = None) -> OpenAI:
+    api_key = (session_api_key or os.getenv("OPENAI_API_KEY") or "").strip()
+    if not api_key:
+        raise HTTPException(
+            status_code=503,
+            detail="OpenAI API key is not configured. Add a session key in Spotlight Ingestion or backend/.env.",
+        )
+
+    if session_api_key and session_api_key.strip():
+        return OpenAI(api_key=api_key)
+
+    global client
+    if client is None:
+        client = OpenAI(api_key=api_key)
+
+    return client
 
 # --- PYDANTIC MODELS ---
 class Evidence(BaseModel):
@@ -42,10 +68,12 @@ class Evidence(BaseModel):
     end_char: Optional[int] = None
 
 class Relation(BaseModel):
+    id: str = Field(default_factory=lambda: f"rel_{uuid4().hex}")
     target_id: str
     type: str
     origin: str = "ai"
-    confidence_score: Optional[int] = None
+    status: str = "verified"
+    confidence_score: Optional[int] = Field(default=None, ge=0, le=100)
     evidence: Optional[str] = None
     reason: Optional[str] = None
 
@@ -59,7 +87,7 @@ class Finding(BaseModel):
     title: str
     status: str
     details: str
-    confidence_score: Optional[int] = Field(default=None)
+    confidence_score: Optional[int] = Field(default=None, ge=0, le=100)
     commit_state: CommitState
     evidence: List[Evidence] = []
     relations: List[Relation] = []
@@ -85,26 +113,40 @@ class ResearchSource(BaseModel):
     character_count: int = 0
     page_count: int = 0
     document_hash: Optional[str] = None
+    topic_fit_score: int = Field(default=100, ge=0, le=100)
+    topic_fit_status: str = "aligned"
+    topic_fit_reason: Optional[str] = None
+    source_policy: str = "smart"
 
 class ResearchRequest(BaseModel):
     query: str
     text: str
-    target_lang: Optional[str] = "auto"
+    target_lang: str = Field(default="auto", pattern=r"^(auto|en|uk)$")
     topic_id: Optional[str] = None
     topic_title: Optional[str] = None
     source_title: Optional[str] = None
     source_page_count: int = 0
+    source_policy: str = Field(
+        default="smart",
+        pattern=r"^(smart|isolate_uncertain|import_without_links)$",
+    )
+    api_key: Optional[str] = Field(default=None, exclude=True)
+
+
+class OpenAIConfigurationResponse(BaseModel):
+    configured: bool
 
 class SocraticRequest(BaseModel):
-    target_lang: Optional[str] = "auto"
+    target_lang: str = Field(default="auto", pattern=r"^(auto|en|uk)$")
     fact_id: Optional[str] = None
     fact_text: Optional[str] = None
     topic_id: Optional[str] = None
+    api_key: Optional[str] = Field(default=None, exclude=True)
 
 class ProposedHypothesis(BaseModel):
     title: str
     details: str
-    confidence_score: int
+    confidence_score: int = Field(ge=0, le=100)
     evidence: str
 
 class SocraticDraft(BaseModel):
@@ -115,7 +157,7 @@ class SocraticDraft(BaseModel):
 class HypothesisCommitRequest(BaseModel):
     title: str
     details: str
-    confidence_score: int
+    confidence_score: int = Field(ge=0, le=100)
     evidence: str
     topic_id: Optional[str] = None
 
@@ -126,7 +168,8 @@ class RelationCreateRequest(BaseModel):
     reason: Optional[str] = None
 
 class DiscoverRelationsRequest(BaseModel):
-    target_lang: Optional[str] = "auto"
+    target_lang: str = Field(default="auto", pattern=r"^(auto|en|uk)$")
+    api_key: Optional[str] = Field(default=None, exclude=True)
 
 class UiNodePosition(BaseModel):
     id: str
@@ -154,10 +197,19 @@ class SourceExtractionResponse(BaseModel):
     page_count: int
     character_count: int
 
+
+class TopicFit(BaseModel):
+    score: int = Field(ge=0, le=100)
+    verdict: str
+    reason: str
+
 class ResearchResponse(BaseModel):
     status: str
     new_proposals: List[Finding] = Field(default_factory=list)
     topic: ResearchTopic
+    warning: Optional[str] = None
+    topic_fit: TopicFit
+    source_quarantined: bool = False
     suggested_layout: str = Field(
         default="graph",
         description="One of: graph, tree, timeline, comparison",
@@ -178,11 +230,16 @@ class WorkspaceState(BaseModel):
 
 # --- STATE MANAGEMENT ---
 STATE_FILE = "workspace_state.json"
+STATE_VERSION = 2
 MODEL_NAME = "gpt-5.6-luna"
 VALID_LAYOUTS = {"graph", "tree", "timeline", "comparison"}
 LEGACY_TOPIC_ID = "topic-legacy-workspace"
 MAX_SOURCE_BYTES = 12 * 1024 * 1024
 SNAPSHOT_LIMIT = 30
+TOPIC_FIT_ALIGNMENT_THRESHOLD = 65
+TOPIC_FIT_QUARANTINE_THRESHOLD = 35
+VALID_TOPIC_FIT_VERDICTS = {"aligned", "uncertain", "unrelated"}
+VALID_RELATION_STATUSES = {"candidate", "verified", "rejected", "hypothesis"}
 ALLOWED_RELATION_TYPES = {
     "supports",
     "contradicts",
@@ -191,33 +248,128 @@ ALLOWED_RELATION_TYPES = {
     "compares_with",
     "extends",
     "manual link",
+    "cross-topic hypothesis",
     "related",
 }
 
 def utc_now() -> str:
-    return datetime.utcnow().isoformat()
+    return datetime.now(timezone.utc).isoformat()
 
 def create_id(prefix: str, index: int = 0) -> str:
-    return f"{prefix}_{datetime.utcnow().strftime('%Y%m%d%H%M%S%f')}_{index}"
+    return f"{prefix}_{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S%f')}_{index}"
 
 def document_hash(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
-def evidence_location(source_text: str, quote: str) -> Optional[Dict[str, int]]:
+
+def normalize_confidence_score(value: Any) -> Optional[int]:
+    if isinstance(value, bool) or value is None:
+        return None
+
+    try:
+        return max(0, min(100, int(float(value))))
+    except (TypeError, ValueError):
+        return None
+
+
+def normalize_topic_fit(value: Any, default_reason: str) -> TopicFit:
+    if not isinstance(value, dict):
+        return TopicFit(score=50, verdict="uncertain", reason=default_reason)
+
+    score = normalize_confidence_score(value.get("score"))
+    verdict = str(value.get("verdict") or "uncertain").strip().lower()
+    reason = str(value.get("reason") or default_reason).strip()
+
+    if verdict not in VALID_TOPIC_FIT_VERDICTS:
+        verdict = "uncertain"
+
+    return TopicFit(
+        score=50 if score is None else score,
+        verdict=verdict,
+        reason=reason or default_reason,
+    )
+
+EVIDENCE_CHARACTER_NORMALIZATION = str.maketrans(
+    {
+        "\u00a0": " ",
+        "\u2018": "'",
+        "\u2019": "'",
+        "\u201a": "'",
+        "\u201b": "'",
+        "\u201c": '"',
+        "\u201d": '"',
+        "\u201e": '"',
+        "\u201f": '"',
+        "\u2013": "-",
+        "\u2014": "-",
+        "\u2212": "-",
+    }
+)
+
+
+def normalize_evidence_text(value: str) -> str:
+    normalized = unicodedata.normalize("NFKC", value).translate(
+        EVIDENCE_CHARACTER_NORMALIZATION
+    )
+    return re.sub(r"\s+", " ", normalized).strip()
+
+
+def normalized_text_with_positions(value: str) -> tuple[str, List[int]]:
+    normalized_characters: List[str] = []
+    source_positions: List[int] = []
+    previous_was_space = False
+
+    for source_index, character in enumerate(value):
+        normalized_character = unicodedata.normalize("NFKC", character).translate(
+            EVIDENCE_CHARACTER_NORMALIZATION
+        )
+
+        for item in normalized_character:
+            if item.isspace():
+                if normalized_characters and not previous_was_space:
+                    normalized_characters.append(" ")
+                    source_positions.append(source_index)
+                previous_was_space = True
+                continue
+
+            normalized_characters.append(item)
+            source_positions.append(source_index)
+            previous_was_space = False
+
+    while normalized_characters and normalized_characters[-1] == " ":
+        normalized_characters.pop()
+        source_positions.pop()
+
+    return "".join(normalized_characters), source_positions
+
+
+def evidence_location(source_text: str, quote: str) -> Optional[Dict[str, Any]]:
     if not quote:
         return None
 
     start_char = source_text.find(quote)
+    end_char = start_char + len(quote)
+
     if start_char < 0:
-        return None
+        normalized_source, source_positions = normalized_text_with_positions(source_text)
+        normalized_quote = normalize_evidence_text(quote)
+        normalized_start = normalized_source.find(normalized_quote)
+
+        if normalized_start < 0 or not normalized_quote:
+            return None
+
+        normalized_end = normalized_start + len(normalized_quote) - 1
+        start_char = source_positions[normalized_start]
+        end_char = source_positions[normalized_end] + 1
 
     page_markers = list(re.finditer(r"\[Page\s+(\d+)\]", source_text[: start_char + 1]))
     page_number = int(page_markers[-1].group(1)) if page_markers else 1
 
     return {
         "start_char": start_char,
-        "end_char": start_char + len(quote),
+        "end_char": end_char,
         "page_number": page_number,
+        "matched_quote": source_text[start_char:end_char],
     }
 
 def validate_evidence(
@@ -237,12 +389,13 @@ def validate_evidence(
         location = evidence_location(source_text, quote)
         if not location:
             continue
+        matched_quote = location.pop("matched_quote")
 
         verified_items.append(
             {
                 "id": evidence.get("id") or f"evidence_{index + 1}",
                 "title": evidence.get("title") or source_title,
-                "quote": quote,
+                "quote": matched_quote,
                 "source_url": evidence.get("source_url"),
                 "source_id": source_id,
                 **location,
@@ -306,6 +459,7 @@ def workspace_response(state: Dict[str, Any]) -> WorkspaceState:
     )
 
 def normalize_state(state: Dict[str, Any]) -> Dict[str, Any]:
+    state.setdefault("state_version", STATE_VERSION)
     state.setdefault("findings", [])
     state.setdefault("proposals", [])
     state.setdefault("topics", [])
@@ -351,6 +505,23 @@ def normalize_state(state: Dict[str, Any]) -> Dict[str, Any]:
         if isinstance(item, dict) and not item.get("topic_id"):
             item["topic_id"] = LEGACY_TOPIC_ID
 
+    for item in [*state["findings"], *state["proposals"]]:
+        if not isinstance(item, dict):
+            continue
+        item["confidence_score"] = normalize_confidence_score(
+            item.get("confidence_score")
+        )
+        for relation in item.get("relations", []):
+            if isinstance(relation, dict):
+                relation.setdefault("id", create_id("rel"))
+                relation["origin"] = relation.get("origin") or "ai"
+                relation_status = relation.get("status")
+                if relation_status not in VALID_RELATION_STATUSES:
+                    relation["status"] = "verified"
+                relation["confidence_score"] = normalize_confidence_score(
+                    relation.get("confidence_score")
+                )
+
     for source in state["sources"]:
         if isinstance(source, dict) and not source.get("topic_id"):
             source["topic_id"] = LEGACY_TOPIC_ID
@@ -372,15 +543,58 @@ def normalize_state(state: Dict[str, Any]) -> Dict[str, Any]:
 
     return state
 
+def state_backup_path() -> str:
+    return f"{STATE_FILE}.bak"
+
+
+def read_state_file(path: str) -> Dict[str, Any]:
+    with open(path, "r", encoding="utf-8") as state_file:
+        return json.load(state_file)
+
+
 def load_state() -> Dict[str, Any]:
-    if os.path.exists(STATE_FILE):
-        with open(STATE_FILE, "r", encoding="utf-8") as f:
-            return normalize_state(json.load(f))
-    return normalize_state({"findings": [], "proposals": []})
+    if not os.path.exists(STATE_FILE):
+        return normalize_state({"findings": [], "proposals": []})
+
+    try:
+        return normalize_state(read_state_file(STATE_FILE))
+    except (OSError, json.JSONDecodeError) as primary_error:
+        backup_path = state_backup_path()
+        if os.path.exists(backup_path):
+            try:
+                return normalize_state(read_state_file(backup_path))
+            except (OSError, json.JSONDecodeError):
+                pass
+        raise HTTPException(
+            status_code=500,
+            detail=(
+                "Workspace state could not be read. The primary file and its backup "
+                "are unavailable or invalid."
+            ),
+        ) from primary_error
+
 
 def save_state(state: Dict[str, Any]):
-    with open(STATE_FILE, "w", encoding="utf-8") as f:
-        json.dump(state, f, indent=4, ensure_ascii=False)
+    state["state_version"] = STATE_VERSION
+    state_path = os.path.abspath(STATE_FILE)
+    temporary_path = f"{state_path}.tmp"
+    backup_path = state_backup_path()
+
+    with open(temporary_path, "w", encoding="utf-8") as state_file:
+        json.dump(state, state_file, indent=4, ensure_ascii=False)
+        state_file.flush()
+        os.fsync(state_file.fileno())
+
+    if os.path.exists(state_path):
+        try:
+            read_state_file(state_path)
+        except (OSError, json.JSONDecodeError):
+            # Keep the last known-good backup if the primary state is corrupted.
+            pass
+        else:
+            shutil.copy2(state_path, backup_path)
+
+    os.replace(temporary_path, state_path)
 
 def extract_json(text: str) -> str:
     """Очищає сиру відповідь ШІ від markdown-обгорток (```json ... ```) перед json.loads."""
@@ -394,9 +608,124 @@ def extract_json(text: str) -> str:
     return cleaned
 
 # --- ENDPOINTS ---
+@app.get("/api/config/openai", response_model=OpenAIConfigurationResponse)
+async def get_openai_configuration() -> OpenAIConfigurationResponse:
+    return OpenAIConfigurationResponse(configured=has_openai_key())
+
+
 @app.get("/api/workspace")
 async def get_workspace():
     return workspace_response(load_state())
+
+
+@app.post("/api/workspace/reset", response_model=WorkspaceState)
+async def reset_workspace() -> WorkspaceState:
+    state = normalize_state(
+        {
+            "findings": [],
+            "proposals": [],
+            "topics": [],
+            "sources": [],
+            "snapshots": [],
+            "revision": 0,
+            "ui_state": WorkspaceUiState().model_dump(),
+            "suggested_layout": "graph",
+        }
+    )
+    save_state(state)
+    return workspace_response(state)
+
+
+@app.delete("/api/topics/{topic_id}", response_model=WorkspaceState)
+async def delete_research_topic(topic_id: str) -> WorkspaceState:
+    state = load_state()
+    topic = next(
+        (item for item in state["topics"] if item.get("id") == topic_id),
+        None,
+    )
+    if topic is None:
+        raise HTTPException(status_code=404, detail="Research topic not found")
+
+    removed_finding_ids = {
+        finding.get("id")
+        for finding in state["findings"]
+        if isinstance(finding, dict) and finding.get("topic_id") == topic_id
+    }
+    removed_node_ids = {
+        f"topic-{topic_id}",
+        *{f"finding-{finding_id}" for finding_id in removed_finding_ids if finding_id},
+    }
+
+    state["topics"] = [
+        item for item in state["topics"] if item.get("id") != topic_id
+    ]
+    state["findings"] = [
+        finding
+        for finding in state["findings"]
+        if finding.get("topic_id") != topic_id
+    ]
+    state["proposals"] = [
+        proposal
+        for proposal in state["proposals"]
+        if proposal.get("topic_id") != topic_id
+    ]
+    state["sources"] = [
+        source
+        for source in state["sources"]
+        if source.get("topic_id") != topic_id
+    ]
+
+    for collection in (state["findings"], state["proposals"]):
+        for item in collection:
+            if not isinstance(item, dict):
+                continue
+            item["relations"] = [
+                relation
+                for relation in item.get("relations", [])
+                if isinstance(relation, dict)
+                and relation.get("target_id") not in removed_finding_ids
+            ]
+
+    ui_state = state.get("ui_state", WorkspaceUiState().model_dump())
+    ui_state["node_positions"] = [
+        position
+        for position in ui_state.get("node_positions", [])
+        if position.get("id") not in removed_node_ids
+    ]
+    ui_state["manual_edges"] = [
+        edge
+        for edge in ui_state.get("manual_edges", [])
+        if edge.get("source") not in removed_node_ids
+        and edge.get("target") not in removed_node_ids
+    ]
+    ui_state["context_layers"] = [
+        {
+            **layer,
+            "memberIds": [
+                member_id
+                for member_id in layer.get("memberIds", [])
+                if member_id not in removed_node_ids
+            ],
+        }
+        for layer in ui_state.get("context_layers", [])
+        if isinstance(layer, dict)
+        and len(
+            [
+                member_id
+                for member_id in layer.get("memberIds", [])
+                if member_id not in removed_node_ids
+            ]
+        ) >= 2
+    ]
+    if ui_state.get("selected_node_id") in removed_node_ids:
+        ui_state["selected_node_id"] = None
+    state["ui_state"] = ui_state
+
+    normalize_state(state)
+    append_snapshot(state, f"Deleted research topic: {topic['title']}")
+    save_state(state)
+    return workspace_response(state)
+
 
 @app.post("/api/sources/extract", response_model=SourceExtractionResponse)
 async def extract_source(file: UploadFile = File(...)) -> SourceExtractionResponse:
@@ -414,6 +743,14 @@ async def extract_source(file: UploadFile = File(...)) -> SourceExtractionRespon
 
     try:
         if extension == ".pdf":
+            try:
+                from pypdf import PdfReader
+            except ImportError as error:
+                raise HTTPException(
+                    status_code=503,
+                    detail="PDF import requires pypdf. Run: python -m pip install -r requirements.txt",
+                ) from error
+
             reader = PdfReader(BytesIO(raw_content))
             pages = [
                 f"[Page {index + 1}]\n{page.extract_text() or ''}"
@@ -421,13 +758,33 @@ async def extract_source(file: UploadFile = File(...)) -> SourceExtractionRespon
             ]
             text = "\n\n".join(pages).strip()
             page_count = len(pages)
-        elif extension in {".txt", ".md", ".csv", ".json"}:
+        elif extension == ".docx":
+            try:
+                from docx import Document
+            except ImportError as error:
+                raise HTTPException(
+                    status_code=503,
+                    detail="DOCX import requires python-docx. Run: python -m pip install -r requirements.txt",
+                ) from error
+
+            document = Document(BytesIO(raw_content))
+            paragraphs = [paragraph.text.strip() for paragraph in document.paragraphs]
+            table_rows = [
+                " | ".join(cell.text.strip() for cell in row.cells)
+                for table in document.tables
+                for row in table.rows
+            ]
+            text = "\n\n".join(
+                part for part in [*paragraphs, *table_rows] if part
+            ).strip()
+            page_count = 0
+        elif extension in {".txt", ".md", ".csv", ".tsv", ".json", ".log"}:
             text = raw_content.decode("utf-8-sig").strip()
             page_count = 0
         else:
             raise HTTPException(
                 status_code=415,
-                detail="Supported files: PDF, TXT, Markdown, CSV, and JSON.",
+                detail="Supported files: PDF, DOCX, TXT, Markdown, CSV, TSV, JSON, and LOG.",
             )
     except UnicodeDecodeError as error:
         raise HTTPException(
@@ -439,7 +796,7 @@ async def extract_source(file: UploadFile = File(...)) -> SourceExtractionRespon
             raise
         raise HTTPException(
             status_code=422,
-            detail="Flow-AI could not extract readable text from this PDF.",
+            detail="Flow-AI could not extract readable text from this source. Scanned PDFs need OCR before import.",
         ) from error
 
     if not text:
@@ -504,6 +861,7 @@ async def start_research(payload: ResearchRequest) -> ResearchResponse:
     if requested_topic_id and topic is None:
         raise HTTPException(status_code=404, detail="Research topic not found")
 
+    is_existing_topic = topic is not None
     if topic is None:
         timestamp = utc_now()
         topic = {
@@ -556,6 +914,7 @@ async def start_research(payload: ResearchRequest) -> ResearchResponse:
         "with this exact structure:\n"
         "{\n"
         '  "suggested_layout": "graph",\n'
+        '  "topic_fit": {"score": 82, "verdict": "aligned", "reason": "Short explanation"},\n'
         '  "proposals": [\n'
         "    {\n"
         '      "id": "prop_1",\n'
@@ -581,7 +940,13 @@ async def start_research(payload: ResearchRequest) -> ResearchResponse:
         "}\n"
         "The suggested_layout value must be exactly one of graph, tree, timeline, comparison. "
         "Use timeline for chronological material, comparison for two or more entities being "
-        "compared, tree for hierarchy or parent-child structure, and graph for all other cases."
+        "compared, tree for hierarchy or parent-child structure, and graph for all other cases. "
+        "When Existing verified findings are supplied, topic_fit must assess whether this source "
+        "belongs to the same research question: use aligned only for direct topical fit, uncertain "
+        "for ambiguous fit, and unrelated when the source is from a different domain. The verdict "
+        "must be exactly aligned, uncertain, or unrelated. If the verdict is uncertain or unrelated, "
+        "return an empty relations list for every proposal. Never force a relation merely because two "
+        "quotes exist. The reason may use the requested response language."
     )
 
     if payload.target_lang and payload.target_lang != "auto":
@@ -600,7 +965,7 @@ async def start_research(payload: ResearchRequest) -> ResearchResponse:
     )
 
     try:
-        response = client.chat.completions.create(
+        response = get_openai_client(payload.api_key).chat.completions.create(
             model=MODEL_NAME,
             reasoning_effort="low",
             messages=[
@@ -611,6 +976,64 @@ async def start_research(payload: ResearchRequest) -> ResearchResponse:
         )
         raw_content = response.choices[0].message.content or "{}"
         result_data = json.loads(extract_json(raw_content))
+        topic_fit = (
+            normalize_topic_fit(
+                result_data.get("topic_fit"),
+                "The source-to-topic fit could not be determined reliably.",
+            )
+            if is_existing_topic
+            else TopicFit(
+                score=100,
+                verdict="aligned",
+                reason="This source establishes a new research topic.",
+            )
+        )
+        source_policy = payload.source_policy
+        is_confidently_aligned = (
+            topic_fit.verdict == "aligned"
+            and topic_fit.score >= TOPIC_FIT_ALIGNMENT_THRESHOLD
+        )
+        source_quarantined = is_existing_topic and (
+            topic_fit.verdict == "unrelated"
+            or topic_fit.score < TOPIC_FIT_QUARANTINE_THRESHOLD
+            or (
+                source_policy == "isolate_uncertain"
+                and not is_confidently_aligned
+            )
+        )
+        relations_allowed = (
+            not is_existing_topic
+            or (
+                is_confidently_aligned
+                and source_policy != "import_without_links"
+            )
+        )
+
+        if source_quarantined:
+            timestamp = utc_now()
+            source_label = (payload.source_title or "Unrelated source").strip()
+            isolation_label = (
+                "Quarantined"
+                if topic_fit.verdict == "unrelated"
+                or topic_fit.score < TOPIC_FIT_QUARANTINE_THRESHOLD
+                else "Review isolate"
+            )
+            topic = {
+                "id": create_id("topic", len(state["topics"])),
+                "title": f"{isolation_label}: {source_label}",
+                "query": source_label,
+                "created_at": timestamp,
+                "updated_at": timestamp,
+                "source_count": 0,
+                "finding_count": 0,
+                "suggested_layout": "graph",
+            }
+            state["topics"].append(topic)
+            topic_id = topic["id"]
+            topic_findings = []
+            topic_finding_by_id = {}
+            relations_allowed = False
+
         requested_layout = result_data.get("suggested_layout", "graph")
         suggested_layout = (
             requested_layout
@@ -618,6 +1041,14 @@ async def start_research(payload: ResearchRequest) -> ResearchResponse:
             else "graph"
         )
         final_proposals = []
+        candidate_proposals = result_data.get("proposals", [])
+        if not isinstance(candidate_proposals, list):
+            raise HTTPException(
+                status_code=502,
+                detail="OpenAI returned an invalid proposals structure.",
+            )
+        rejected_for_evidence = 0
+        rejected_for_schema = 0
         source = {
             "id": create_id("source", len(state["sources"])),
             "topic_id": topic_id,
@@ -626,15 +1057,25 @@ async def start_research(payload: ResearchRequest) -> ResearchResponse:
             "character_count": len(payload.text),
             "page_count": max(payload.source_page_count, 0),
             "document_hash": document_hash(payload.text),
+            "topic_fit_score": topic_fit.score,
+            "topic_fit_status": topic_fit.verdict,
+            "topic_fit_reason": topic_fit.reason,
+            "source_policy": source_policy,
         }
 
-        for index, proposal in enumerate(result_data.get("proposals", [])):
+        for index, proposal in enumerate(candidate_proposals):
+            if not isinstance(proposal, dict):
+                rejected_for_schema += 1
+                continue
             proposal["id"] = create_id("prop", index)
             proposal.setdefault("commit_state", {})
             proposal["commit_state"].setdefault("revision", 1)
             proposal["commit_state"].setdefault("workspace", "Proposal")
             proposal["commit_state"]["updated_at"] = utc_now()
             proposal.setdefault("status", "Unidentified")
+            proposal["confidence_score"] = normalize_confidence_score(
+                proposal.get("confidence_score")
+            )
             proposal["evidence"] = validate_evidence(
                 proposal.get("evidence", []),
                 payload.text,
@@ -647,30 +1088,38 @@ async def start_research(payload: ResearchRequest) -> ResearchResponse:
             proposal["source_title"] = source["title"]
 
             if not proposal["evidence"]:
+                rejected_for_evidence += 1
                 continue
 
-            verified_relations = []
-            for relation in proposal["relations"]:
-                if not isinstance(relation, dict):
-                    continue
-                target_id = relation.get("target_id")
-                target_finding = topic_finding_by_id.get(target_id)
-                relation_type = relation.get("type", "related")
-                if not target_finding or relation_type not in ALLOWED_RELATION_TYPES:
-                    continue
-                if not relation_evidence_is_valid(
-                    relation.get("evidence"),
-                    {"evidence": proposal["evidence"]},
-                    target_finding,
-                ):
-                    continue
-                relation["origin"] = "ai"
-                verified_relations.append(relation)
-            proposal["relations"] = verified_relations
+            candidate_relations = []
+            if relations_allowed:
+                for relation in proposal["relations"]:
+                    if not isinstance(relation, dict):
+                        continue
+                    target_id = relation.get("target_id")
+                    target_finding = topic_finding_by_id.get(target_id)
+                    relation_type = relation.get("type", "related")
+                    if not target_finding or relation_type not in ALLOWED_RELATION_TYPES:
+                        continue
+                    if not relation_evidence_is_valid(
+                        relation.get("evidence"),
+                        {"evidence": proposal["evidence"]},
+                        target_finding,
+                    ):
+                        continue
+                    relation["id"] = create_id("rel", index)
+                    relation["origin"] = "ai"
+                    relation["status"] = "candidate"
+                    relation["confidence_score"] = normalize_confidence_score(
+                        relation.get("confidence_score")
+                    )
+                    candidate_relations.append(relation)
+            proposal["relations"] = candidate_relations
 
             try:
                 validated_proposal = Finding(**proposal)
             except Exception:
+                rejected_for_schema += 1
                 continue
 
             state.setdefault("proposals", []).append(validated_proposal.model_dump())
@@ -684,12 +1133,45 @@ async def start_research(payload: ResearchRequest) -> ResearchResponse:
         append_snapshot(state, f"Analyzed source: {source['title']}")
         save_state(state)
 
+        warning = None
+        if source_quarantined:
+            warning = (
+                f"Source isolated into a separate topic because its fit with the active topic "
+                f"was {topic_fit.score}/100 ({topic_fit.verdict}). No cross-topic relations were created."
+            )
+        elif is_existing_topic and source_policy == "import_without_links":
+            warning = (
+                "Source was imported into the active topic without automatic AI relations, "
+                "as requested by the import policy."
+            )
+        elif is_existing_topic and not relations_allowed:
+            warning = (
+                f"Source fit is {topic_fit.score}/100 ({topic_fit.verdict}), so Flow-AI kept its "
+                "facts separate from existing facts and created no AI relations."
+            )
+        elif candidate_proposals and not final_proposals:
+            warning = (
+                "AI returned proposals, but none contained a quote that could be mapped "
+                "back to the uploaded source. The source was saved; try a more focused "
+                "excerpt or run the analysis again."
+            )
+        elif rejected_for_evidence or rejected_for_schema:
+            warning = (
+                f"Accepted {len(final_proposals)} evidence-grounded proposal(s); skipped "
+                f"{rejected_for_evidence + rejected_for_schema} item(s) without valid source evidence."
+            )
+
         return ResearchResponse(
-            status="success",
+            status="success" if warning is None else "completed_with_warnings",
             new_proposals=final_proposals,
             topic=ResearchTopic.model_validate(topic),
+            warning=warning,
+            topic_fit=topic_fit,
+            source_quarantined=source_quarantined,
             suggested_layout=suggested_layout,
         )
+    except HTTPException:
+        raise
     except Exception as error:
         raise HTTPException(status_code=500, detail=f"OpenAI API Error: {str(error)}")
 
@@ -758,7 +1240,7 @@ async def discover_relations(
     ]
 
     try:
-        response = client.chat.completions.create(
+        response = get_openai_client(payload.api_key).chat.completions.create(
             model=MODEL_NAME,
             reasoning_effort="low",
             messages=[
@@ -768,6 +1250,8 @@ async def discover_relations(
             response_format={"type": "json_object"},
         )
         result = json.loads(extract_json(response.choices[0].message.content or "{}"))
+    except HTTPException:
+        raise
     except Exception as error:
         raise HTTPException(status_code=500, detail=f"Connection discovery failed: {str(error)}")
 
@@ -801,16 +1285,15 @@ async def discover_relations(
         if already_exists:
             continue
 
-        confidence_score = candidate.get("confidence_score")
+        confidence_score = normalize_confidence_score(
+            candidate.get("confidence_score")
+        )
         relation = Relation(
             target_id=target_id,
             type=relation_type,
             origin="ai",
-            confidence_score=(
-                max(0, min(100, int(confidence_score)))
-                if isinstance(confidence_score, (int, float))
-                else None
-            ),
+            status="candidate",
+            confidence_score=confidence_score,
             evidence=candidate.get("evidence"),
             reason=candidate.get("reason"),
         )
@@ -818,7 +1301,10 @@ async def discover_relations(
         created_relations.append({"source_id": source_id, **relation.model_dump()})
 
     if created_relations:
-        append_snapshot(state, f"Discovered {len(created_relations)} graph connections")
+        append_snapshot(
+            state,
+            f"Created {len(created_relations)} AI relation candidate(s) for review",
+        )
         save_state(state)
 
     return {
@@ -846,6 +1332,13 @@ async def create_manual_relation(
         raise HTTPException(status_code=422, detail="A finding cannot link to itself")
 
     relation_type = payload.type.strip().lower() or "manual link"
+    if relation_type not in ALLOWED_RELATION_TYPES:
+        raise HTTPException(status_code=422, detail="Unsupported relation type")
+
+    is_cross_topic = source_finding.get("topic_id") != target_finding.get("topic_id")
+    if is_cross_topic:
+        relation_type = "cross-topic hypothesis"
+
     existing_relation = next(
         (
             relation
@@ -863,16 +1356,63 @@ async def create_manual_relation(
         target_id=payload.target_id,
         type=relation_type,
         origin="manual",
+        status="hypothesis" if is_cross_topic else "verified",
         evidence=payload.evidence,
-        reason=payload.reason or "Created manually on the graph canvas.",
+        reason=(
+            payload.reason
+            or (
+                "Cross-topic hypothesis created manually. It is not an evidence-verified AI relation."
+                if is_cross_topic
+                else "Created manually on the graph canvas."
+            )
+        ),
     )
     source_finding.setdefault("relations", []).append(relation.model_dump())
-    append_snapshot(state, f"Created manual connection: {source_finding['title']}")
+    append_snapshot(
+        state,
+        (
+            f"Created cross-topic hypothesis: {source_finding['title']}"
+            if is_cross_topic
+            else f"Created manual connection: {source_finding['title']}"
+        ),
+    )
     save_state(state)
     return {"status": "success", "relation": relation}
 
-@app.delete("/api/findings/{finding_id}/relations/{target_id}")
-async def delete_manual_relation(finding_id: str, target_id: str):
+@app.post("/api/findings/{finding_id}/relations/{relation_id}/approve")
+async def approve_ai_relation(finding_id: str, relation_id: str):
+    state = load_state()
+    source_finding = next(
+        (finding for finding in state["findings"] if finding.get("id") == finding_id),
+        None,
+    )
+    if source_finding is None:
+        raise HTTPException(status_code=404, detail="Source finding not found")
+
+    relation = next(
+        (
+            item
+            for item in source_finding.get("relations", [])
+            if item.get("id") == relation_id
+        ),
+        None,
+    )
+    if relation is None:
+        raise HTTPException(status_code=404, detail="Relation not found")
+    if relation.get("origin") != "ai" or relation.get("status") != "candidate":
+        raise HTTPException(
+            status_code=422,
+            detail="Only pending AI relation candidates can be approved",
+        )
+
+    relation["status"] = "verified"
+    append_snapshot(state, f"Approved AI relation from: {source_finding['title']}")
+    save_state(state)
+    return {"status": "success", "relation": relation}
+
+
+@app.delete("/api/findings/{finding_id}/relations/{relation_id}")
+async def delete_relation(finding_id: str, relation_id: str):
     state = load_state()
     source_finding = next(
         (finding for finding in state["findings"] if finding.get("id") == finding_id),
@@ -882,19 +1422,24 @@ async def delete_manual_relation(finding_id: str, target_id: str):
         raise HTTPException(status_code=404, detail="Source finding not found")
 
     relations = source_finding.get("relations", [])
-    remaining_relations = [
-        relation
-        for relation in relations
-        if not (
-            relation.get("target_id") == target_id
-            and relation.get("origin") == "manual"
+    relation = next((item for item in relations if item.get("id") == relation_id), None)
+    if relation is None:
+        raise HTTPException(status_code=404, detail="Relation not found")
+    if relation.get("origin") != "manual" and relation.get("status") != "candidate":
+        raise HTTPException(
+            status_code=422,
+            detail="Verified AI relations cannot be deleted from the canvas",
         )
-    ]
-    if len(remaining_relations) == len(relations):
-        raise HTTPException(status_code=404, detail="Manual relation not found")
 
-    source_finding["relations"] = remaining_relations
-    append_snapshot(state, f"Removed manual connection from: {source_finding['title']}")
+    source_finding["relations"] = [
+        item for item in relations if item.get("id") != relation_id
+    ]
+    action = (
+        f"Rejected AI relation candidate from: {source_finding['title']}"
+        if relation.get("status") == "candidate" and relation.get("origin") == "ai"
+        else f"Removed manual connection from: {source_finding['title']}"
+    )
+    append_snapshot(state, action)
     save_state(state)
     return {"status": "success"}
 
@@ -934,17 +1479,29 @@ async def socratic_review(request: SocraticRequest) -> SocraticDraft:
     if request.fact_id and selected_fact is None:
         raise HTTPException(status_code=404, detail="Selected finding was not found in this topic")
 
-    target_instruction = (
-        "You are an AI Red Teamer. Critique only the targeted fact below. Attack its "
-        "logic, unstated assumptions, evidentiary basis, missing context, and possible "
-        "contradictions with the workspace. Do not drift into a generic workspace review.\n"
-        f"Target fact ID: {selected_fact['id']}\n"
-        f"Target fact title: {selected_fact['title']}\n"
-        f"Target fact text: {selected_fact['details']}\n"
-        if selected_fact
-        else "You are a Socratic Co-Pilot. Critique the entire workspace and identify its "
-        "most consequential logical gap, unsupported claim, or contradiction.\n"
-    )
+    supplied_fact_text = (request.fact_text or "").strip()
+    if selected_fact:
+        target_instruction = (
+            "You are an AI Red Teamer. Critique only the targeted fact below. Attack its "
+            "logic, unstated assumptions, evidentiary basis, missing context, and possible "
+            "contradictions with the workspace. Do not drift into a generic workspace review.\n"
+            f"Target fact ID: {selected_fact['id']}\n"
+            f"Target fact title: {selected_fact['title']}\n"
+            f"Target fact text: {selected_fact['details']}\n"
+        )
+    elif supplied_fact_text:
+        target_instruction = (
+            "You are an AI Red Teamer. Critique only the fact text supplied by the user "
+            "interface below. Attack its logic, unstated assumptions, evidentiary basis, "
+            "missing context, and possible contradictions with the workspace. Do not drift "
+            "into a generic workspace review.\n"
+            f"Target fact text: {supplied_fact_text}\n"
+        )
+    else:
+        target_instruction = (
+            "You are a Socratic Co-Pilot. Critique the entire workspace and identify its "
+            "most consequential logical gap, unsupported claim, or contradiction.\n"
+        )
 
     system_prompt = (
         f"{target_instruction}"
@@ -974,9 +1531,11 @@ async def socratic_review(request: SocraticRequest) -> SocraticDraft:
         f"Current findings:\n{json.dumps(findings, ensure_ascii=False)}\n\n"
         f"Current proposals:\n{json.dumps(proposals, ensure_ascii=False)}"
     )
+    if supplied_fact_text and not selected_fact:
+        user_content += f"\n\nTarget fact supplied by the interface:\n{supplied_fact_text}"
 
     try:
-        response = client.chat.completions.create(
+        response = get_openai_client(request.api_key).chat.completions.create(
             model=MODEL_NAME,
             reasoning_effort="low",
             messages=[
@@ -987,6 +1546,11 @@ async def socratic_review(request: SocraticRequest) -> SocraticDraft:
         )
         raw_content = response.choices[0].message.content or "{}"
         result_data = json.loads(extract_json(raw_content))
+        hypothesis = result_data.get("proposed_hypothesis")
+        if isinstance(hypothesis, dict):
+            hypothesis["confidence_score"] = normalize_confidence_score(
+                hypothesis.get("confidence_score")
+            )
         draft = SocraticDraft(**result_data)
         workspace_evidence = {
             evidence.get("quote")

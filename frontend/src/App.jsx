@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   addEdge,
   Background,
@@ -15,12 +15,499 @@ import "@xyflow/react/dist/style.css";
 
 const API_URL = "http://localhost:8000";
 
+const UI_COPY = {
+  en: {
+    verifiedFact: "Verified Fact",
+    verified: "Verified",
+    evidenceConfidence: "Evidence confidence",
+    unscored: "Unscored",
+    redTeamBranch: "Red Team Branch",
+    socraticDraft: "Socratic Draft",
+    attack: "Attack",
+    critiques: "Critiques",
+    workspaceAssumptions: "workspace assumptions",
+    mergeRequiresEvidence: "Merge requires an exact source evidence quote.",
+    merging: "Merging...",
+    resolveMerge: "Resolve & Merge",
+    rejectAttack: "Reject Attack",
+    contextLayer: "Context Layer",
+    facts: "facts",
+    researchTopic: "Research Topic",
+    sources: "sources",
+    addPaperSource: "+ Add paper / source",
+    manual: "● Manual",
+    review: "◉ Review",
+    magic: "✦ Magic",
+    graph: "Graph",
+    tree: "Tree",
+    timeline: "Timeline",
+    compare: "Compare",
+    workspaceMode: "Workspace mode",
+    layoutMode: "Graph layout mode",
+    copilotThinking: "Co-Pilot thinking...",
+    runCopilot: "Run Context Co-Pilot",
+    exportReport: "📥 Export Skill / Download Report",
+    openIngestion: "Open research ingestion",
+    spotlight: "Spotlight Ingestion",
+    addEvidenceTo: (title) => `Add evidence to ${title || "research topic"}`,
+    startNewTopic: "Start a new research topic",
+    importEvidenceDescription: "Import another paper, note, or dataset. New findings will connect to the active topic and relevant verified facts.",
+    newTopicDescription: "Define a concrete question and the first source. Flow-AI will create a dedicated topic root on the canvas.",
+    close: "Close",
+    sessionKey: "Session-only OpenAI key",
+    sessionReady: "Session ready",
+    backendReady: "Backend ready",
+    keyRequired: "Key required",
+    sessionReadyDescription: "Ready for this browser session only. It is not written to disk or browser storage.",
+    backendReadyDescription: "A local backend key is available. You may enter a session key to use it instead.",
+    keyRequiredDescription: "Paste a key to enable AI analysis. File extraction itself works without one.",
+    freshRunHint: "Need a clean run? Clear previous test topics, findings, graph links, and history.",
+    clearing: "Clearing...",
+    startFresh: "Start fresh workspace",
+    responseLanguage: "Response language",
+    responseLanguageDescription: "Choose the language for findings, questions, hypotheses, relation labels, and the interface.",
+    auto: "Auto",
+    sourceLanguage: "Source language",
+    english: "English",
+    englishOutput: "English output",
+    ukrainian: "Ukrainian",
+    ukrainianOutput: "Ukrainian output",
+    firewallPolicy: "Relation Firewall policy",
+    firewallDescription: "Choose how a source with uncertain topical fit should affect this research topic.",
+    smartFirewall: "Smart firewall",
+    smartFirewallDescription: "Recommended: isolate unrelated sources and block weak AI links.",
+    isolateUncertain: "Keep uncertain isolated",
+    isolateUncertainDescription: "Only strongly aligned sources join this topic.",
+    importWithoutLinks: "Import without links",
+    importWithoutLinksDescription: "Keep facts here, but disable all automatic AI relations.",
+    activeQuery: "Active Query",
+    queryPlaceholder: "What should Flow-AI investigate?",
+    sourcePaperTitle: "Source / paper title",
+    sourceTitlePlaceholder: "e.g. paper title, dataset name, or source label",
+    researchDocument: "Research Document",
+    documentPlaceholder: "Paste source material, notes, transcripts, or evidence...",
+    importSource: "Import source file",
+    importDescription: "PDF, DOCX, TXT, Markdown, CSV, TSV, JSON or LOG. PDF and DOCX are extracted by the backend and mapped back to evidence.",
+    extracting: "Extracting readable text from the source…",
+    pagesReady: (count) => `${count} PDF pages ready for evidence mapping.`,
+    cancel: "Cancel",
+    analyzing: "Analyzing research...",
+    analyzeSource: "Analyze Source → Connect Findings",
+    analyzeResearch: "Analyze Research → Create Topic",
+    aiInbox: "AI Inbox",
+    proposals: "Proposals",
+    loadingInbox: "Loading inbox...",
+    noProposalsTopic: "No proposals for this topic yet. Add a paper or another source.",
+    noProposalsWorkspace: "Inbox is empty. Create a research topic to start analysis.",
+    source: "Source",
+    mergeWorkspace: "Merge to Workspace",
+    canvasLabel: "Knowledge graph canvas",
+    activeTopic: "Active research topic",
+    selectTopic: "Select a topic",
+    newTopic: "+ New topic",
+    addPaper: "+ Add paper",
+    deleting: "Deleting...",
+    deleteTopic: "Delete topic",
+    graphIntro: "New analysis creates proposals in AI Inbox. Merge verified facts, then discover evidence-grounded links or switch to Manual to draw your own.",
+    graphFilters: "Graph filters & legend",
+    searchFindings: "Search findings…",
+    filterBySource: "Filter graph by source",
+    allSources: "All sources",
+    minimumConfidence: "Minimum finding confidence",
+    anyConfidence: "Any confidence",
+    highConfidence: "High confidence · 85%+",
+    mediumConfidence: "Medium confidence · 65%+",
+    focusedTopic: "Focused: active topic",
+    focusTopic: "Focus active topic",
+    trail: "Trail",
+    redTeam: "Red team",
+    selected: "selected",
+    group: "Group",
+    graphLegend: "Cyan = verified AI link · yellow dashed = review required · purple dashed = cross-topic hypothesis · red dashed = Socratic challenge.",
+    socraticCopilot: "Socratic Co-Pilot",
+    languageSetInIngestion: "Language · set in ingestion",
+    magicLayout: "⚡ Magic Layout",
+    downloadReport: "📥 Download Report",
+    discovering: "Discovering evidence links...",
+    discoverConnections: "✦ Discover Connections",
+    mergeMore: (count) => `Merge ${count} more proposal${count === 1 ? "" : "s"} to enable AI connection discovery.`,
+    inspector: "Inspector",
+    contextGitState: "Context Git State",
+    draft: "DRAFT",
+    inbox: "INBOX",
+    pendingLink: "PENDING LINK",
+    hypothesis: "HYPOTHESIS",
+    relation: "RELATION",
+    state: "State",
+    history: "History",
+    snapshots: "Workspace Snapshots",
+    restoreDescription: "Restore a previous verified Context Git state.",
+    revisions: "revisions",
+    firstSnapshot: "The first snapshot appears after analysis, merge, or a relation change.",
+    timestampUnavailable: "timestamp unavailable",
+    restoring: "Restoring...",
+    restore: (revision) => `Restore r${revision}`,
+    relationPath: "Relation Path",
+    relationEvidence: "Relation Evidence · Strict Evidence Mapping",
+    sourceEvidence: "Source Evidence · Strict Evidence Mapping",
+    noEvidence: "No evidence available.",
+    page: "Page",
+    textSource: "Text source",
+    character: "char",
+    firewallReview: "Relation Firewall · Human Review Required",
+    aiSuggestion: "AI suggestions stay provisional until you approve their evidence mapping.",
+    pending: "pending",
+    confidence: "Confidence",
+    notScored: "not scored",
+    saving: "Saving...",
+    approveEvidence: "Approve evidence link",
+    rejectLink: "Reject link",
+    aiReasoning: "AI Reasoning",
+    socraticQuestions: "Socratic Questions",
+    proposedHypothesis: "Proposed Hypothesis",
+    noSelection: "Select a proposal in AI Inbox or a verified fact on the canvas to inspect its Context Git State.",
+    rawState: "Pydantic State · Raw JSON",
+    requiresKey: "Enter an OpenAI API key in Spotlight Ingestion before AI analysis.",
+    waitForExtraction: "Wait for source extraction to finish.",
+    fillResearchFields: "Fill in Active Query and Research Document before analysis.",
+    analysisFailed: "AI analysis failed.",
+    topicDeleted: "Research topic deleted. A previous revision remains available in History.",
+    chooseTopic: "Select a research topic before discovering connections.",
+    noKeyForConnections: "Enter an OpenAI API key in Spotlight Ingestion before discovering connections.",
+    relationApproved: "AI relation approved and marked as a verified evidence link.",
+    relationRejected: "AI relation candidate rejected. The graph now contains the remaining links.",
+    reviewFailed: "Context Co-Pilot could not create a draft.",
+    mergeFailed: "Resolve & Merge failed.",
+    relationUnavailable: "This relation is no longer available. The workspace was refreshed.",
+    groupSelection: "Select at least two ungrouped Fact Nodes for a Context Layer.",
+    uiSaveFailed: "Could not save the canvas state.",
+    workspaceLoadFailed: "Could not load Context Git State.",
+    backendUnavailable: "Could not connect to the local backend.",
+    openAiConfigUnavailable: "OpenAI configuration is unavailable.",
+    sourceExtractionFailed: "Could not extract readable text from the source.",
+    confirmReset: "Clear all previous topics, findings, proposals, graph links, and history? This cannot be undone.",
+    resetFailed: "Could not clear the previous workspace.",
+    chooseTopicToDelete: "Select a topic to delete first.",
+    confirmDeleteTopic: (title) => `Delete “${title}” and all of its sources, proposals, findings, and graph links? You can restore an earlier revision from History.`,
+    deleteTopicFailed: "Could not delete the research topic.",
+    topicFitVerdict: (verdict) => ({ aligned: "aligned", uncertain: "uncertain", unrelated: "unrelated" }[verdict] || verdict),
+    topicFit: (score, verdict, reason) => {
+      const labels = { aligned: "aligned", uncertain: "uncertain", unrelated: "unrelated" };
+      return `Topic fit ${score}/100 · ${labels[verdict] || verdict}. ${reason || ""}`;
+    },
+    sourceQuarantined: (summary) => `Relation Firewall isolated this source in a separate topic. ${summary}`,
+    createdProposals: (count, summary) => `Created ${count} evidence-grounded proposal${count === 1 ? "" : "s"} in AI Inbox. ${summary}`,
+    noProposalsAnalysis: (summary) => `Analysis completed. No evidence-grounded proposals were returned for this source. ${summary}`,
+    proposalCommitFailed: "Could not merge the proposal into Workspace.",
+    proposalMerged: "Finding merged into Workspace. Merge at least two findings in this topic to enable AI connection discovery.",
+    noConnections: "No additional evidence-grounded connections were found between the verified facts.",
+    discoveryCreated: (count) => `Created ${count} evidence-grounded AI relation candidate${count === 1 ? "" : "s"}. Review it before it becomes verified.`,
+    connectionDiscoveryFailed: "Could not discover connections between the facts.",
+    aiApproveFailed: "Could not approve the AI evidence link.",
+    aiRejectFailed: "Could not reject the AI evidence link.",
+    manualRelationFailed: "Could not save the manual connection.",
+    checkoutFailed: "Could not restore the revision.",
+    importWithoutLinksNotice: "Source imported without automatic AI relations, as requested by the import policy.",
+    sourceFitNotice: (score, verdict) => `Source fit is ${score}/100 (${verdict}), so Flow-AI kept its facts separate from existing facts and created no AI relations.`,
+    noEvidenceMappedNotice: "AI returned proposals, but none contained a quote that could be mapped back to the uploaded source. The source was saved; try a more focused excerpt or run the analysis again.",
+    acceptedSkippedNotice: (accepted, skipped) => `Accepted ${accepted} evidence-grounded proposal${accepted === 1 ? "" : "s"}; skipped ${skipped} item${skipped === 1 ? "" : "s"} without valid source evidence.`,
+    analysisWarning: "Analysis completed with a warning. Check the source and topic fit.",
+  },
+  uk: {
+    verifiedFact: "Підтверджений факт",
+    verified: "Підтверджено",
+    evidenceConfidence: "Надійність доказу",
+    unscored: "Без оцінки",
+    redTeamBranch: "Red Team гілка",
+    socraticDraft: "Сократичний драфт",
+    attack: "Атака",
+    critiques: "Критикує",
+    workspaceAssumptions: "припущення робочого простору",
+    mergeRequiresEvidence: "Для злиття потрібна точна цитата з джерела.",
+    merging: "Злиття...",
+    resolveMerge: "Вирішити й об’єднати",
+    rejectAttack: "Відхилити атаку",
+    contextLayer: "Контекстний шар",
+    facts: "фактів",
+    researchTopic: "Тема дослідження",
+    sources: "джерел",
+    addPaperSource: "+ Додати paper / джерело",
+    manual: "● Ручний",
+    review: "◉ Огляд",
+    magic: "✦ Магія",
+    graph: "Граф",
+    tree: "Дерево",
+    timeline: "Хронологія",
+    compare: "Порівняння",
+    workspaceMode: "Режим роботи",
+    layoutMode: "Режим структури графа",
+    copilotThinking: "Co-Pilot аналізує...",
+    runCopilot: "Запустити Context Co-Pilot",
+    exportReport: "📥 Експорт у Skill / звіт",
+    openIngestion: "Відкрити імпорт дослідження",
+    spotlight: "Spotlight-імпорт",
+    addEvidenceTo: (title) => `Додати докази до ${title || "теми дослідження"}`,
+    startNewTopic: "Почати нову тему дослідження",
+    importEvidenceDescription: "Імпортуйте paper, нотатку або dataset. Нові факти з’єднаються з активною темою та релевантними підтвердженими фактами.",
+    newTopicDescription: "Сформулюйте конкретне питання та додайте перше джерело. Flow-AI створить окремий кореневий вузол теми.",
+    close: "Закрити",
+    sessionKey: "Сесійний OpenAI ключ",
+    sessionReady: "Сесія готова",
+    backendReady: "Backend готовий",
+    keyRequired: "Потрібен ключ",
+    sessionReadyDescription: "Ключ діє лише в цій сесії браузера й не записується на диск або в browser storage.",
+    backendReadyDescription: "Локальний backend-ключ доступний. За бажанням можна ввести сесійний ключ замість нього.",
+    keyRequiredDescription: "Вставте ключ для AI-аналізу. Витягування файлів працює і без нього.",
+    freshRunHint: "Потрібен чистий прогін? Очистіть попередні теми, факти, зв’язки та історію.",
+    clearing: "Очищення...",
+    startFresh: "Почати з чистого workspace",
+    responseLanguage: "Мова відповіді",
+    responseLanguageDescription: "Оберіть мову фактів, питань, гіпотез, підписів зв’язків та інтерфейсу.",
+    auto: "Авто",
+    sourceLanguage: "Мова джерела",
+    english: "Англійська",
+    englishOutput: "Відповідь англійською",
+    ukrainian: "Українська",
+    ukrainianOutput: "Відповідь українською",
+    firewallPolicy: "Політика Relation Firewall",
+    firewallDescription: "Оберіть, як джерело з невизначеною тематичною відповідністю впливатиме на цю тему.",
+    smartFirewall: "Розумний firewall",
+    smartFirewallDescription: "Рекомендовано: ізолювати нерелевантні джерела та блокувати слабкі AI-зв’язки.",
+    isolateUncertain: "Ізолювати невизначені",
+    isolateUncertainDescription: "До теми потрапляють лише джерела з високою відповідністю.",
+    importWithoutLinks: "Імпорт без зв’язків",
+    importWithoutLinksDescription: "Залишити факти в темі, але вимкнути автоматичні AI-зв’язки.",
+    activeQuery: "Активний запит",
+    queryPlaceholder: "Що має дослідити Flow-AI?",
+    sourcePaperTitle: "Назва джерела / paper",
+    sourceTitlePlaceholder: "наприклад, назва paper, dataset або джерела",
+    researchDocument: "Документ дослідження",
+    documentPlaceholder: "Вставте матеріали, нотатки, транскрипт або докази...",
+    importSource: "Імпорт файлу джерела",
+    importDescription: "PDF, DOCX, TXT, Markdown, CSV, TSV, JSON або LOG. PDF і DOCX витягуються backend-ом і прив’язуються до доказів.",
+    extracting: "Витягування тексту з джерела…",
+    pagesReady: (count) => `${count} сторінок PDF готові для мапування доказів.`,
+    cancel: "Скасувати",
+    analyzing: "Аналіз дослідження...",
+    analyzeSource: "Аналізувати джерело → з’єднати факти",
+    analyzeResearch: "Аналізувати → створити тему",
+    aiInbox: "AI Inbox",
+    proposals: "Пропозиції",
+    loadingInbox: "Завантаження inbox...",
+    noProposalsTopic: "У цій темі ще немає пропозицій. Додайте paper або інше джерело.",
+    noProposalsWorkspace: "Inbox порожній. Створіть тему дослідження, щоб почати аналіз.",
+    source: "Джерело",
+    mergeWorkspace: "Об’єднати з workspace",
+    canvasLabel: "Полотно графа знань",
+    activeTopic: "Активна тема дослідження",
+    selectTopic: "Оберіть тему",
+    newTopic: "+ Нова тема",
+    addPaper: "+ Додати paper",
+    deleting: "Видалення...",
+    deleteTopic: "Видалити тему",
+    graphIntro: "Новий аналіз створює пропозиції в AI Inbox. Об’єднайте підтверджені факти, потім знайдіть доказові зв’язки або перемкніться в ручний режим.",
+    graphFilters: "Фільтри графа та легенда",
+    searchFindings: "Пошук фактів…",
+    filterBySource: "Фільтр графа за джерелом",
+    allSources: "Усі джерела",
+    minimumConfidence: "Мінімальна надійність факту",
+    anyConfidence: "Будь-яка надійність",
+    highConfidence: "Висока надійність · 85%+",
+    mediumConfidence: "Середня надійність · 65%+",
+    focusedTopic: "Фокус: активна тема",
+    focusTopic: "Фокус на активній темі",
+    trail: "Траєкторія",
+    redTeam: "Red team",
+    selected: "вибрано",
+    group: "Групувати",
+    graphLegend: "Ціанова лінія = підтверджений AI-зв’язок · жовта пунктирна = потрібен огляд · фіолетова пунктирна = гіпотеза між темами · червона пунктирна = сократичний виклик.",
+    socraticCopilot: "Сократичний Co-Pilot",
+    languageSetInIngestion: "Мова · задається в імпорті",
+    magicLayout: "⚡ Магічне компонування",
+    downloadReport: "📥 Завантажити звіт",
+    discovering: "Пошук доказових зв’язків...",
+    discoverConnections: "✦ Знайти зв’язки",
+    mergeMore: (count) => `Об’єднайте ще ${count} ${count === 1 ? "пропозицію" : "пропозиції"}, щоб увімкнути пошук AI-зв’язків.`,
+    inspector: "Inspector",
+    contextGitState: "Стан Context Git",
+    draft: "ДРАФТ",
+    inbox: "INBOX",
+    pendingLink: "ОЧІКУЄ ЗВ’ЯЗОК",
+    hypothesis: "ГІПОТЕЗА",
+    relation: "ЗВ’ЯЗОК",
+    state: "Стан",
+    history: "Історія",
+    snapshots: "Знімки workspace",
+    restoreDescription: "Відновіть попередній підтверджений стан Context Git.",
+    revisions: "ревізій",
+    firstSnapshot: "Перший знімок з’явиться після аналізу, об’єднання або зміни зв’язку.",
+    timestampUnavailable: "час недоступний",
+    restoring: "Відновлення...",
+    restore: (revision) => `Відновити r${revision}`,
+    relationPath: "Шлях зв’язку",
+    relationEvidence: "Доказ зв’язку · Strict Evidence Mapping",
+    sourceEvidence: "Доказ джерела · Strict Evidence Mapping",
+    noEvidence: "Докази відсутні.",
+    page: "Сторінка",
+    textSource: "Текстове джерело",
+    character: "симв",
+    firewallReview: "Relation Firewall · Потрібен людський огляд",
+    aiSuggestion: "AI-пропозиції залишаються попередніми, доки ви не підтвердите їхнє мапування доказів.",
+    pending: "очікує",
+    confidence: "Надійність",
+    notScored: "без оцінки",
+    saving: "Збереження...",
+    approveEvidence: "Підтвердити доказовий зв’язок",
+    rejectLink: "Відхилити зв’язок",
+    aiReasoning: "AI-обґрунтування",
+    socraticQuestions: "Сократичні питання",
+    proposedHypothesis: "Запропонована гіпотеза",
+    noSelection: "Оберіть пропозицію в AI Inbox або підтверджений факт на полотні, щоб переглянути його стан Context Git.",
+    rawState: "Стан Pydantic · Raw JSON",
+    requiresKey: "Введіть OpenAI API key у Spotlight-імпорті перед AI-аналізом.",
+    waitForExtraction: "Дочекайтеся завершення витягування тексту з джерела.",
+    fillResearchFields: "Заповніть активний запит і документ дослідження перед аналізом.",
+    analysisFailed: "AI-аналіз не виконався.",
+    topicDeleted: "Тему дослідження видалено. Попередню ревізію можна відновити в історії.",
+    chooseTopic: "Спочатку виберіть тему дослідження для пошуку зв’язків.",
+    noKeyForConnections: "Введіть OpenAI API key у Spotlight-імпорті перед пошуком зв’язків.",
+    relationApproved: "AI-зв’язок підтверджено як перевірений доказовий зв’язок.",
+    relationRejected: "Кандидатний AI-зв’язок відхилено. На графі залишилися інші зв’язки.",
+    reviewFailed: "Context Co-Pilot не зміг створити драфт.",
+    mergeFailed: "Не вдалося виконати Resolve & Merge.",
+    relationUnavailable: "Цей зв’язок більше недоступний. Workspace оновлено.",
+    groupSelection: "Виділіть щонайменше дві непогруповані Fact Nodes для Context Layer.",
+    uiSaveFailed: "Не вдалося зберегти стан полотна.",
+    workspaceLoadFailed: "Не вдалося завантажити стан Context Git.",
+    backendUnavailable: "Не вдалося підключитися до локального backend.",
+    openAiConfigUnavailable: "Конфігурація OpenAI недоступна.",
+    sourceExtractionFailed: "Не вдалося витягнути читабельний текст із джерела.",
+    confirmReset: "Очистити всі попередні теми, факти, пропозиції, зв’язки та історію? Це неможливо скасувати.",
+    resetFailed: "Не вдалося очистити попередній workspace.",
+    chooseTopicToDelete: "Спочатку виберіть тему для видалення.",
+    confirmDeleteTopic: (title) => `Видалити “${title}” та всі її джерела, пропозиції, факти й зв’язки? Попередню ревізію можна відновити в історії.`,
+    deleteTopicFailed: "Не вдалося видалити тему дослідження.",
+    topicFitVerdict: (verdict) => ({ aligned: "відповідає", uncertain: "невизначена", unrelated: "не відповідає" }[verdict] || verdict),
+    topicFit: (score, verdict, reason) => {
+      const labels = { aligned: "відповідає", uncertain: "невизначена", unrelated: "не відповідає" };
+      return `Відповідність темі ${score}/100 · ${labels[verdict] || verdict}. ${reason || ""}`;
+    },
+    sourceQuarantined: (summary) => `Relation Firewall ізолював це джерело в окремій темі. ${summary}`,
+    createdProposals: (count, summary) => `Створено ${count} доказов${count === 1 ? "у пропозицію" : "их пропозицій"} в AI Inbox. ${summary}`,
+    noProposalsAnalysis: (summary) => `Аналіз завершено. Для цього джерела не повернуто доказових пропозицій. ${summary}`,
+    proposalCommitFailed: "Не вдалося об’єднати пропозицію з Workspace.",
+    proposalMerged: "Факт об’єднано з Workspace. Об’єднайте щонайменше два факти в темі, щоб увімкнути пошук AI-зв’язків.",
+    noConnections: "Між підтвердженими фактами не знайдено додаткових доказових зв’язків.",
+    discoveryCreated: (count) => `Створено ${count} кандидат${count === 1 ? "" : "ів"} доказових AI-зв’язків. Перевірте їх перед підтвердженням.`,
+    connectionDiscoveryFailed: "Не вдалося знайти зв’язки між фактами.",
+    aiApproveFailed: "Не вдалося підтвердити AI-доказовий зв’язок.",
+    aiRejectFailed: "Не вдалося відхилити AI-доказовий зв’язок.",
+    manualRelationFailed: "Не вдалося зберегти ручний зв’язок.",
+    checkoutFailed: "Не вдалося відновити ревізію.",
+    importWithoutLinksNotice: "Джерело імпортовано без автоматичних AI-зв’язків відповідно до політики імпорту.",
+    sourceFitNotice: (score, verdict) => `Відповідність джерела ${score}/100 (${verdict}), тому Flow-AI залишив факти окремо й не створив AI-зв’язків.`,
+    noEvidenceMappedNotice: "AI повернув пропозиції, але жодна цитата не мапується назад на завантажене джерело. Джерело збережено; спробуйте сфокусованіший уривок або повторіть аналіз.",
+    acceptedSkippedNotice: (accepted, skipped) => `Прийнято ${accepted} доказов${accepted === 1 ? "у пропозицію" : "их пропозицій"}; пропущено ${skipped} елемент${skipped === 1 ? "" : "ів"} без валідного доказу з джерела.`,
+    analysisWarning: "Аналіз завершено з попередженням. Перевірте джерело та його відповідність темі.",
+  },
+};
+
+const detectUiLanguage = (value) =>
+  /[А-Яа-яІіЇїЄєҐґ]/.test(value || "") ? "uk" : "en";
+
+const resolveUiLanguage = (targetLang, sourceText) => {
+  if (targetLang === "uk" || targetLang === "en") return targetLang;
+  return sourceText.trim() ? detectUiLanguage(sourceText) : "uk";
+};
+
+const RELATION_TYPE_COPY = {
+  en: {
+    supports: "supports",
+    contradicts: "contradicts",
+    explains: "explains",
+    causes: "causes",
+    compares_with: "compares with",
+    extends: "extends",
+    related: "related",
+    "manual link": "manual link",
+    "cross-topic hypothesis": "cross-topic hypothesis",
+  },
+  uk: {
+    supports: "підтримує",
+    contradicts: "суперечить",
+    explains: "пояснює",
+    causes: "спричиняє",
+    compares_with: "порівнює",
+    extends: "розширює",
+    related: "пов’язаний",
+    "manual link": "ручний зв’язок",
+    "cross-topic hypothesis": "гіпотеза між темами",
+  },
+};
+
+const formatRelationType = (type, language) =>
+  RELATION_TYPE_COPY[language]?.[type] || type?.replaceAll("_", " ") || "relation";
+
+const localizeBackendWarning = (warning, topicFit, copy) => {
+  if (typeof warning !== "string" || !warning.trim()) return "";
+
+  if (warning.includes("without automatic AI relations")) {
+    return copy.importWithoutLinksNotice;
+  }
+
+  if (warning.startsWith("Source fit is")) {
+    return copy.sourceFitNotice(
+      topicFit?.score ?? "—",
+      copy.topicFitVerdict(topicFit?.verdict || "unknown")
+    );
+  }
+
+  if (warning.startsWith("AI returned proposals")) {
+    return copy.noEvidenceMappedNotice;
+  }
+
+  if (warning.startsWith("Accepted ")) {
+    const accepted = Number(warning.match(/^Accepted (\d+)/)?.[1]) || 0;
+    const skipped = Number(warning.match(/skipped (\d+)/)?.[1]) || 0;
+    return copy.acceptedSkippedNotice(accepted, skipped);
+  }
+
+  return copy.analysisWarning;
+};
+
+const getLocalizedRequestError = (_requestError, fallback) => fallback;
+
+const RELATION_STATUS_COPY = {
+  en: {
+    ai: "AI",
+    manual: "Manual",
+    candidate: "Candidate",
+    verified: "Verified",
+    hypothesis: "Hypothesis",
+  },
+  uk: {
+    ai: "AI",
+    manual: "Ручний",
+    candidate: "Кандидат",
+    verified: "Підтверджено",
+    hypothesis: "Гіпотеза",
+  },
+};
+
+const formatRelationStatus = (status, language) =>
+  RELATION_STATUS_COPY[language]?.[status] || status || "—";
+
 const FactNode = memo(function FactNode({ data, selected }) {
+  const confidenceScore = Number(data.finding.confidence_score);
+  const hasConfidenceScore = Number.isFinite(confidenceScore);
+
   return (
     <div
       className={`min-w-60 rounded-xl border bg-slate-900/95 px-4 py-3 shadow-xl shadow-cyan-950/40 transition ${
         selected
           ? "border-cyan-300 ring-2 ring-cyan-400/40"
+          : data.isRelationEndpoint
+            ? "border-yellow-300 ring-2 ring-yellow-400/25"
           : "border-emerald-500/70 hover:border-cyan-400"
       }`}
     >
@@ -31,15 +518,21 @@ const FactNode = memo(function FactNode({ data, selected }) {
       />
       <div className="mb-2 flex items-center justify-between gap-3">
         <span className="text-[10px] font-extrabold uppercase tracking-[0.16em] text-emerald-300">
-          Verified Fact
+          {data.copy.verifiedFact}
         </span>
         <span className="rounded-full bg-emerald-400/15 px-2 py-0.5 text-[10px] font-bold text-emerald-300">
-          Verified
+          {data.copy.verified}
         </span>
       </div>
       <p className="max-w-64 text-sm font-semibold leading-5 text-slate-100">
         {data.finding.title}
       </p>
+      <div className="mt-3 flex items-center justify-between gap-2 text-[10px] font-bold uppercase tracking-wide">
+        <span className="text-slate-500">{data.copy.evidenceConfidence}</span>
+        <span className={hasConfidenceScore && confidenceScore >= 85 ? "text-emerald-300" : hasConfidenceScore && confidenceScore >= 65 ? "text-cyan-300" : "text-slate-400"}>
+          {hasConfidenceScore ? `${confidenceScore}%` : data.copy.unscored}
+        </span>
+      </div>
       <Handle
         type="source"
         position={Position.Bottom}
@@ -75,12 +568,12 @@ const DraftNode = memo(function DraftNode({ data, selected }) {
       <div className="flex items-start justify-between gap-3">
         <div>
           <p className="text-[10px] font-extrabold uppercase tracking-[0.16em] text-yellow-300">
-            Red Team Branch
+            {data.copy.redTeamBranch}
           </p>
-          <h3 className="mt-1 text-sm font-bold text-yellow-100">Socratic Draft</h3>
+          <h3 className="mt-1 text-sm font-bold text-yellow-100">{data.copy.socraticDraft}</h3>
         </div>
         <span className="rounded-full bg-yellow-400 px-2 py-0.5 text-[10px] font-extrabold text-slate-950">
-          Attack
+          {data.copy.attack}
         </span>
       </div>
 
@@ -88,7 +581,7 @@ const DraftNode = memo(function DraftNode({ data, selected }) {
         {data.draft.proposed_hypothesis.title}
       </p>
       <p className="mt-1 text-xs font-medium text-yellow-300/85">
-        Critiques: {data.targetTitle || "workspace assumptions"}
+        {data.copy.critiques}: {data.targetTitle || data.copy.workspaceAssumptions}
       </p>
       <p className="mt-2 line-clamp-3 text-xs leading-5 text-slate-400">
         {data.draft.identified_gap}
@@ -96,7 +589,7 @@ const DraftNode = memo(function DraftNode({ data, selected }) {
 
       {!data.canMerge && (
         <p className="mt-3 rounded-lg border border-rose-400/40 bg-rose-950/30 px-3 py-2 text-xs font-medium text-rose-200">
-          Merge requires an exact source evidence quote.
+          {data.copy.mergeRequiresEvidence}
         </p>
       )}
 
@@ -107,7 +600,7 @@ const DraftNode = memo(function DraftNode({ data, selected }) {
           disabled={data.isMerging || !data.canMerge}
           className="rounded-lg bg-yellow-400 px-3 py-2 text-xs font-extrabold text-slate-950 transition hover:bg-yellow-300 disabled:cursor-not-allowed disabled:opacity-60"
         >
-          {data.isMerging ? "Merging..." : "Resolve & Merge"}
+          {data.isMerging ? data.copy.merging : data.copy.resolveMerge}
         </button>
         <button
           type="button"
@@ -115,7 +608,7 @@ const DraftNode = memo(function DraftNode({ data, selected }) {
           disabled={data.isMerging}
           className="rounded-lg border border-rose-400/60 px-3 py-2 text-xs font-bold text-rose-300 transition hover:bg-rose-400 hover:text-slate-950 disabled:cursor-not-allowed disabled:opacity-60"
         >
-          Reject Attack
+          {data.copy.rejectAttack}
         </button>
       </div>
       <Handle
@@ -139,12 +632,12 @@ const ContextLayerNode = memo(function ContextLayerNode({ data, selected }) {
       <div className="flex items-center justify-between gap-3">
         <div>
           <p className="text-[10px] font-extrabold uppercase tracking-[0.18em] text-cyan-400">
-            Context Layer
+            {data.copy.contextLayer}
           </p>
           <p className="mt-1 text-sm font-bold text-cyan-100">{data.label}</p>
         </div>
         <span className="rounded-full border border-cyan-400/30 bg-cyan-400/10 px-2 py-1 text-[10px] font-extrabold text-cyan-300">
-          {data.memberCount} facts
+          {data.memberCount} {data.copy.facts}
         </span>
       </div>
     </div>
@@ -173,7 +666,7 @@ const RootNode = memo(function RootNode({ data, selected }) {
       <div className="flex items-start justify-between gap-3">
         <div>
           <p className="text-[10px] font-extrabold uppercase tracking-[0.18em] text-cyan-400">
-            Research Topic
+            {data.copy.researchTopic}
           </p>
           <p className="mt-1 max-w-56 text-sm font-bold leading-5 text-white">
             {data.root.title}
@@ -188,10 +681,10 @@ const RootNode = memo(function RootNode({ data, selected }) {
       </div>
       <div className="mt-3 flex flex-wrap gap-2 text-[10px] font-bold uppercase tracking-wide text-slate-400">
         <span className="rounded-full border border-slate-700 bg-slate-950 px-2 py-1">
-          {data.root.source_count || 0} sources
+          {data.root.source_count || 0} {data.copy.sources}
         </span>
         <span className="rounded-full border border-slate-700 bg-slate-950 px-2 py-1">
-          {data.root.finding_count || 0} facts
+          {data.root.finding_count || 0} {data.copy.facts}
         </span>
       </div>
       <button
@@ -199,7 +692,7 @@ const RootNode = memo(function RootNode({ data, selected }) {
         onClick={openIngestion}
         className="mt-4 rounded-lg border border-cyan-400/50 bg-cyan-400/10 px-3 py-2 text-xs font-bold text-cyan-200 transition hover:bg-cyan-400 hover:text-slate-950"
       >
-        + Add paper / source
+        {data.copy.addPaperSource}
       </button>
       <Handle
         type="source"
@@ -211,6 +704,7 @@ const RootNode = memo(function RootNode({ data, selected }) {
 });
 
 function TopBar({
+  copy,
   activeMode,
   setActiveMode,
   layoutMode,
@@ -222,17 +716,18 @@ function TopBar({
   onDownloadReport,
   isReviewing,
   error,
+  notice,
 }) {
   const modes = [
-    { id: "manual", label: "● Manual" },
-    { id: "review", label: "◉ Review" },
-    { id: "magic", label: "✦ Magic" },
+    { id: "manual", label: copy.manual },
+    { id: "review", label: copy.review },
+    { id: "magic", label: copy.magic },
   ];
   const layoutOptions = [
-    { id: "graph", label: "Graph" },
-    { id: "tree", label: "Tree" },
-    { id: "timeline", label: "Timeline" },
-    { id: "comparison", label: "Compare" },
+    { id: "graph", label: copy.graph },
+    { id: "tree", label: copy.tree },
+    { id: "timeline", label: copy.timeline },
+    { id: "comparison", label: copy.compare },
   ];
 
   const handleModeChange = (mode) => {
@@ -259,7 +754,7 @@ function TopBar({
           type="button"
           onClick={onOpenIngest}
           className="flex items-center gap-3 self-start rounded-xl text-left outline-none transition hover:opacity-90 focus-visible:ring-2 focus-visible:ring-cyan-400 xl:self-auto"
-          aria-label="Open research ingestion"
+          aria-label={copy.openIngestion}
         >
           <span className="grid h-10 w-10 place-items-center rounded-xl bg-cyan-400 text-lg font-black text-slate-950 shadow-lg shadow-cyan-500/20">
             F
@@ -278,7 +773,7 @@ function TopBar({
           <div
             className="inline-flex rounded-xl border border-slate-700 bg-slate-950/70 p-1"
             role="group"
-            aria-label="Workspace mode"
+            aria-label={copy.workspaceMode}
           >
             {modes.map((mode) => (
               <button
@@ -299,7 +794,7 @@ function TopBar({
           <div
             className="inline-flex rounded-lg border border-slate-800 bg-slate-950/70 p-0.5"
             role="group"
-            aria-label="Graph layout mode"
+            aria-label={copy.layoutMode}
           >
             {layoutOptions.map((layout) => (
               <button
@@ -325,14 +820,14 @@ function TopBar({
             disabled={isReviewing}
             className="rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 px-4 py-2.5 text-sm font-extrabold text-white shadow-lg shadow-cyan-950/40 transition hover:from-cyan-400 hover:to-blue-500 disabled:cursor-not-allowed disabled:opacity-60"
           >
-            {isReviewing ? "Co-Pilot thinking..." : "Запустити Context Co-Pilot"}
+              {isReviewing ? copy.copilotThinking : copy.runCopilot}
           </button>
           <button
             type="button"
             onClick={onDownloadReport}
             className="rounded-xl border border-slate-700 bg-[#0f172a] px-4 py-2.5 text-sm font-bold text-slate-200 transition hover:border-cyan-400/70 hover:text-cyan-300"
           >
-            📥 Експорт у Skill / Download Report
+            {copy.exportReport}
           </button>
         </div>
       </div>
@@ -341,11 +836,17 @@ function TopBar({
           {error}
         </div>
       )}
+      {notice && (
+        <div className="mx-auto mt-3 max-w-[1920px] rounded-lg border border-cyan-400/35 bg-cyan-400/10 px-3 py-2 text-sm text-cyan-100">
+          {notice}
+        </div>
+      )}
     </header>
   );
 }
 
 function IngestResearchModal({
+  copy,
   isOpen,
   ingestMode,
   activeTopicTitle,
@@ -357,6 +858,17 @@ function IngestResearchModal({
   setSourceTitle,
   sourcePageCount,
   setSourcePageCount,
+  sourcePolicy,
+  setSourcePolicy,
+  targetLang,
+  setTargetLang,
+  apiKey,
+  setApiKey,
+  isOpenAiConfigured,
+  error,
+  notice,
+  isResettingWorkspace,
+  onStartFreshWorkspace,
   isExtractingSource,
   onExtractFile,
   isAnalyzing,
@@ -364,6 +876,9 @@ function IngestResearchModal({
   onClose,
   spotlightInputRef,
 }) {
+  const hasSessionApiKey = Boolean(apiKey.trim());
+  const canUseOpenAi = hasSessionApiKey || isOpenAiConfigured;
+
   const handleFileUpload = (event) => {
     const file = event.target.files?.[0];
 
@@ -371,7 +886,9 @@ function IngestResearchModal({
 
     setSourceTitle(file.name);
 
-    if (file.name.toLowerCase().endsWith(".pdf")) {
+    const extension = file.name.slice(file.name.lastIndexOf(".")).toLowerCase();
+
+    if ([".pdf", ".docx"].includes(extension)) {
       onExtractFile(file);
       event.target.value = "";
       return;
@@ -397,50 +914,206 @@ function IngestResearchModal({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/40 p-4 backdrop-blur-md">
+    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-950/40 p-2 backdrop-blur-md sm:items-center sm:p-4">
       <section
-        className="w-full max-w-2xl rounded-2xl border border-cyan-400/25 bg-[#0f172a]/95 p-5 shadow-2xl shadow-cyan-950/50 sm:p-7"
+        className="my-auto flex max-h-[calc(100dvh-1rem)] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-cyan-400/25 bg-[#0f172a]/95 p-4 shadow-2xl shadow-cyan-950/50 sm:max-h-[calc(100dvh-2rem)] sm:p-7"
         role="dialog"
         aria-modal="true"
         aria-labelledby="ingest-modal-title"
       >
-        <div className="flex items-start justify-between gap-5">
+        <div className="flex shrink-0 items-start justify-between gap-5">
           <div>
             <p className="text-[10px] font-extrabold uppercase tracking-[0.2em] text-cyan-400">
-              Spotlight Ingestion
+            {copy.spotlight}
             </p>
             <h2 id="ingest-modal-title" className="mt-2 text-2xl font-bold text-white">
               {ingestMode === "source"
-                ? `Add evidence to ${activeTopicTitle || "research topic"}`
-                : "Start a new research topic"}
+                ? copy.addEvidenceTo(activeTopicTitle)
+                : copy.startNewTopic}
             </h2>
             <p className="mt-2 text-sm leading-6 text-slate-400">
               {ingestMode === "source"
-                ? "Import another paper, note, or dataset. New findings will connect to the active topic and relevant verified facts."
-                : "Define a concrete question and the first source. Flow-AI will create a dedicated topic root on the canvas."}
+                ? copy.importEvidenceDescription
+                : copy.newTopicDescription}
             </p>
           </div>
           <button
             type="button"
             onClick={onClose}
             className="rounded-lg px-2 py-1 text-xl leading-none text-slate-500 transition hover:bg-slate-800 hover:text-slate-100"
-            aria-label="Close ingestion modal"
+            aria-label={copy.close}
           >
             ×
           </button>
         </div>
 
-        <div className="mt-6 space-y-4">
+        {error && (
+          <div className="mt-4 shrink-0 rounded-xl border border-rose-400/45 bg-rose-950/35 px-3 py-2.5 text-sm font-medium text-rose-100">
+            {error}
+          </div>
+        )}
+        {notice && (
+          <div className="mt-4 shrink-0 rounded-xl border border-cyan-400/35 bg-cyan-400/10 px-3 py-2.5 text-sm font-medium text-cyan-100">
+            {notice}
+          </div>
+        )}
+
+        <div className="mt-5 min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain pr-1 sm:mt-6 sm:pr-2">
+          <section className="rounded-xl border border-violet-400/30 bg-violet-400/5 p-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <p className="text-xs font-extrabold uppercase tracking-[0.16em] text-violet-300">
+                  {copy.sessionKey}
+                </p>
+                <p className="mt-1 text-xs leading-5 text-slate-400">
+                  {hasSessionApiKey
+                    ? copy.sessionReadyDescription
+                    : isOpenAiConfigured
+                      ? copy.backendReadyDescription
+                      : copy.keyRequiredDescription}
+                </p>
+              </div>
+              <span
+                className={`rounded-full px-2 py-1 text-[10px] font-extrabold uppercase tracking-[0.14em] ${
+                  canUseOpenAi
+                    ? "bg-emerald-400/15 text-emerald-300"
+                    : "bg-amber-400/15 text-amber-300"
+                }`}
+              >
+                {hasSessionApiKey
+                  ? copy.sessionReady
+                  : isOpenAiConfigured
+                    ? copy.backendReady
+                    : copy.keyRequired}
+              </span>
+            </div>
+            <div className="mt-3">
+              <input
+                type="password"
+                value={apiKey}
+                onChange={(event) => setApiKey(event.target.value)}
+                placeholder="sk-..."
+                autoComplete="off"
+                spellCheck="false"
+                className="min-w-0 flex-1 rounded-lg border border-slate-700 bg-slate-950 px-3 py-2.5 text-sm text-slate-100 outline-none transition placeholder:text-slate-600 focus:border-violet-400 focus:ring-2 focus:ring-violet-400/20"
+              />
+            </div>
+            {ingestMode === "topic" && (
+              <div className="mt-3 flex flex-col gap-2 border-t border-violet-400/15 pt-3 sm:flex-row sm:items-center sm:justify-between">
+                <p className="text-xs leading-5 text-slate-500">
+                  {copy.freshRunHint}
+                </p>
+                <button
+                  type="button"
+                  onClick={onStartFreshWorkspace}
+                  disabled={isResettingWorkspace || isAnalyzing}
+                  className="shrink-0 rounded-lg border border-rose-400/55 bg-rose-400/10 px-3 py-2 text-xs font-extrabold text-rose-200 transition hover:bg-rose-400 hover:text-slate-950 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {isResettingWorkspace ? copy.clearing : copy.startFresh}
+                </button>
+              </div>
+            )}
+          </section>
+
+          <section className="rounded-xl border border-cyan-400/35 bg-cyan-400/5 p-4">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <p className="text-xs font-extrabold uppercase tracking-[0.16em] text-cyan-300">
+                  {copy.responseLanguage}
+                </p>
+                <p className="mt-1 text-xs leading-5 text-slate-400">
+                  {copy.responseLanguageDescription}
+                </p>
+              </div>
+              <span className="rounded-full border border-cyan-400/25 bg-slate-950/60 px-2 py-1 text-[10px] font-extrabold uppercase tracking-[0.14em] text-cyan-200">
+                {targetLang === "uk" ? copy.ukrainian : targetLang === "en" ? copy.english : copy.auto}
+              </span>
+            </div>
+            <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-3">
+              {[
+                { value: "auto", label: copy.auto, description: copy.sourceLanguage },
+                { value: "en", label: copy.english, description: copy.englishOutput },
+                { value: "uk", label: copy.ukrainian, description: copy.ukrainianOutput },
+              ].map((language) => (
+                <button
+                  key={language.value}
+                  type="button"
+                  onClick={() => setTargetLang(language.value)}
+                  className={`rounded-xl border px-3 py-3 text-left transition ${
+                    targetLang === language.value
+                      ? "border-cyan-300 bg-cyan-400 text-slate-950"
+                      : "border-slate-700 bg-slate-950/70 text-slate-300 hover:border-cyan-400/60"
+                  }`}
+                >
+                  <span className="block text-sm font-extrabold">{language.label}</span>
+                  <span className={`mt-1 block text-[11px] font-medium ${
+                    targetLang === language.value ? "text-slate-800" : "text-slate-500"
+                  }`}>
+                    {language.description}
+                  </span>
+                </button>
+              ))}
+            </div>
+          </section>
+
+          {ingestMode === "source" && (
+            <section className="rounded-xl border border-yellow-400/30 bg-yellow-400/5 p-4">
+              <p className="text-xs font-extrabold uppercase tracking-[0.16em] text-yellow-300">
+                {copy.firewallPolicy}
+              </p>
+              <p className="mt-1 text-xs leading-5 text-slate-400">
+                {copy.firewallDescription}
+              </p>
+              <div className="mt-3 grid gap-2 sm:grid-cols-3">
+                {[
+                  {
+                    value: "smart",
+                    label: copy.smartFirewall,
+                    description: copy.smartFirewallDescription,
+                  },
+                  {
+                    value: "isolate_uncertain",
+                    label: copy.isolateUncertain,
+                    description: copy.isolateUncertainDescription,
+                  },
+                  {
+                    value: "import_without_links",
+                    label: copy.importWithoutLinks,
+                    description: copy.importWithoutLinksDescription,
+                  },
+                ].map((policy) => (
+                  <button
+                    key={policy.value}
+                    type="button"
+                    onClick={() => setSourcePolicy(policy.value)}
+                    className={`rounded-xl border px-3 py-3 text-left transition ${
+                      sourcePolicy === policy.value
+                        ? "border-yellow-300 bg-yellow-400 text-slate-950"
+                        : "border-slate-700 bg-slate-950/70 text-slate-300 hover:border-yellow-300/70"
+                    }`}
+                  >
+                    <span className="block text-xs font-extrabold">{policy.label}</span>
+                    <span className={`mt-1 block text-[10px] leading-4 ${
+                      sourcePolicy === policy.value ? "text-slate-800" : "text-slate-500"
+                    }`}>
+                      {policy.description}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </section>
+          )}
+
           <label className="block">
             <span className="text-xs font-extrabold uppercase tracking-[0.16em] text-slate-400">
-              Active Query
+              {copy.activeQuery}
             </span>
             <input
               type="text"
               ref={spotlightInputRef}
               value={query}
               onChange={(event) => setQuery(event.target.value)}
-              placeholder="What should Flow-AI investigate?"
+              placeholder={copy.queryPlaceholder}
               autoFocus
               className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-sm text-slate-100 outline-none transition placeholder:text-slate-600 focus:border-cyan-400 focus:ring-2 focus:ring-cyan-400/20"
             />
@@ -448,64 +1121,64 @@ function IngestResearchModal({
 
           <label className="block">
             <span className="text-xs font-extrabold uppercase tracking-[0.16em] text-slate-400">
-              Source / paper title
+              {copy.sourcePaperTitle}
             </span>
             <input
               type="text"
               value={sourceTitle}
               onChange={(event) => setSourceTitle(event.target.value)}
-              placeholder="e.g. Iliad translation, paper title, or dataset name"
+              placeholder={copy.sourceTitlePlaceholder}
               className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-sm text-slate-100 outline-none transition placeholder:text-slate-600 focus:border-cyan-400 focus:ring-2 focus:ring-cyan-400/20"
             />
           </label>
 
           <label className="block">
             <span className="text-xs font-extrabold uppercase tracking-[0.16em] text-slate-400">
-              Research Document
+              {copy.researchDocument}
             </span>
             <textarea
               value={text}
               onChange={(event) => setText(event.target.value)}
-              placeholder="Paste source material, notes, transcripts, or evidence..."
-              className="mt-2 min-h-52 w-full resize-y rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-sm leading-6 text-slate-100 outline-none transition placeholder:text-slate-600 focus:border-cyan-400 focus:ring-2 focus:ring-cyan-400/20"
+              placeholder={copy.documentPlaceholder}
+              className="mt-2 h-40 min-h-40 w-full resize-y rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-sm leading-6 text-slate-100 outline-none transition placeholder:text-slate-600 focus:border-cyan-400 focus:ring-2 focus:ring-cyan-400/20 sm:h-52 sm:min-h-52"
             />
           </label>
 
           <label className="block rounded-xl border border-dashed border-cyan-400/35 bg-cyan-400/5 p-3 transition hover:border-cyan-400/70 hover:bg-cyan-400/10">
             <span className="block text-xs font-extrabold uppercase tracking-[0.16em] text-cyan-300">
-              Import source file
+              {copy.importSource}
             </span>
             <span className="mt-1 block text-xs leading-5 text-slate-500">
-              PDF, TXT, Markdown, CSV or JSON. PDF pages are extracted locally by the backend and mapped back to evidence.
+              {copy.importDescription}
             </span>
             <input
               type="file"
-              accept=".pdf,.txt,.md,.csv,.json"
+              accept=".pdf,.docx,.txt,.md,.csv,.tsv,.json,.log"
               onChange={handleFileUpload}
               disabled={isAnalyzing || isExtractingSource}
               className="mt-3 block w-full cursor-pointer rounded-lg border border-slate-700 bg-slate-950 text-xs text-slate-400 file:mr-3 file:cursor-pointer file:border-0 file:bg-cyan-400 file:px-3 file:py-2 file:text-xs file:font-extrabold file:text-slate-950 hover:file:bg-cyan-300 disabled:cursor-not-allowed disabled:opacity-60"
             />
             {isExtractingSource && (
               <span className="mt-2 block text-xs font-semibold text-cyan-300">
-                Extracting readable text from the source…
+                {copy.extracting}
               </span>
             )}
             {!isExtractingSource && sourcePageCount > 0 && (
               <span className="mt-2 block text-xs font-semibold text-emerald-300">
-                {sourcePageCount} PDF pages ready for evidence mapping.
+                {copy.pagesReady(sourcePageCount)}
               </span>
             )}
           </label>
         </div>
 
-        <div className="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:items-center sm:justify-end">
+        <div className="mt-4 flex shrink-0 flex-col-reverse gap-3 border-t border-slate-800 pt-4 sm:mt-6 sm:flex-row sm:items-center sm:justify-end">
           <button
             type="button"
             onClick={onClose}
             disabled={isAnalyzing}
             className="rounded-xl px-4 py-3 text-sm font-bold text-slate-400 transition hover:text-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            Cancel
+            {copy.cancel}
           </button>
           <button
             type="button"
@@ -514,10 +1187,10 @@ function IngestResearchModal({
             className="rounded-xl bg-gradient-to-r from-cyan-400 to-blue-500 px-5 py-3 text-sm font-extrabold text-slate-950 shadow-lg shadow-cyan-950/40 transition hover:from-cyan-300 hover:to-blue-400 disabled:cursor-not-allowed disabled:opacity-60"
           >
             {isAnalyzing
-              ? "Analyzing research..."
+              ? copy.analyzing
               : ingestMode === "source"
-                ? "Analyze Source → Connect Findings"
-                : "Analyze Research → Create Topic"}
+                ? copy.analyzeSource
+                : copy.analyzeResearch}
           </button>
         </div>
       </section>
@@ -534,8 +1207,8 @@ const nodeTypes = {
 
 const readError = async (response, fallback) => {
   try {
-    const body = await response.json();
-    return body.detail || body.message || fallback;
+    await response.json();
+    return fallback;
   } catch {
     return fallback;
   }
@@ -568,6 +1241,21 @@ const getEvidence = (item, isDraft) => {
 const getConfidenceScore = (proposal) => {
   const score = proposal.confidence_score;
   return Number.isFinite(Number(score)) ? Number(score) : "—";
+};
+
+const getConfidenceTier = (item) => {
+  const score = Number(item?.confidence_score);
+
+  if (!Number.isFinite(score)) {
+    return { label: "Unscored", className: "text-slate-500" };
+  }
+  if (score >= 85) {
+    return { label: "High", className: "text-emerald-300" };
+  }
+  if (score >= 65) {
+    return { label: "Medium", className: "text-cyan-300" };
+  }
+  return { label: "Needs review", className: "text-amber-300" };
 };
 
 const GRAPH_UI_STORAGE_KEY = "flow-ai-graph-ui-v5";
@@ -692,6 +1380,7 @@ export default function App() {
   const [query, setQuery] = useState("");
   const [sourceTitle, setSourceTitle] = useState("");
   const [sourcePageCount, setSourcePageCount] = useState(0);
+  const [sourcePolicy, setSourcePolicy] = useState("smart");
   const [isIngestModalOpen, setIsIngestModalOpen] = useState(false);
   const [ingestMode, setIngestMode] = useState("topic");
   const [researchTopics, setResearchTopics] = useState([]);
@@ -719,7 +1408,44 @@ export default function App() {
   const [selectedItem, setSelectedItem] = useState(null);
   const [selectedDraftNodeId, setSelectedDraftNodeId] = useState(null);
   const [inspectorTab, setInspectorTab] = useState("state");
+  const [graphSearch, setGraphSearch] = useState("");
+  const [graphSourceFilter, setGraphSourceFilter] = useState("all");
+  const [minimumConfidence, setMinimumConfidence] = useState("all");
+  const [focusActiveTopic, setFocusActiveTopic] = useState(false);
+  const [edgeVisibility, setEdgeVisibility] = useState({
+    evidenceTrails: true,
+    verified: true,
+    candidates: true,
+    manual: true,
+    hypotheses: true,
+    drafts: true,
+  });
   const [targetLang, setTargetLang] = useState("auto");
+  const uiLanguage = useMemo(() => {
+    const activeResearchTopic = researchTopics.find(
+      (topic) => topic.id === activeTopicId
+    );
+    const languageSample =
+      text.trim() ||
+      sourceTitle.trim() ||
+      query.trim() ||
+      activeResearchTopic?.query ||
+      findings[0]?.details ||
+      "";
+
+    return resolveUiLanguage(targetLang, languageSample);
+  }, [
+    activeTopicId,
+    findings,
+    query,
+    researchTopics,
+    sourceTitle,
+    targetLang,
+    text,
+  ]);
+  const copy = UI_COPY[uiLanguage];
+  const [apiKey, setApiKey] = useState("");
+  const [isOpenAiConfigured, setIsOpenAiConfigured] = useState(false);
   const [workspaceHistory, setWorkspaceHistory] = useState([]);
   const [error, setError] = useState("");
   const [isLoadingWorkspace, setIsLoadingWorkspace] = useState(true);
@@ -727,9 +1453,13 @@ export default function App() {
   const [isExtractingSource, setIsExtractingSource] = useState(false);
   const [isReviewing, setIsReviewing] = useState(false);
   const [isDiscoveringConnections, setIsDiscoveringConnections] = useState(false);
+  const [reviewingRelationId, setReviewingRelationId] = useState(null);
   const [isCheckingOut, setIsCheckingOut] = useState(false);
+  const [isResettingWorkspace, setIsResettingWorkspace] = useState(false);
+  const [isDeletingTopic, setIsDeletingTopic] = useState(false);
   const [committingProposalId, setCommittingProposalId] = useState(null);
   const [isMergingDraft, setIsMergingDraft] = useState(false);
+  const [notice, setNotice] = useState("");
   const layerCounter = useRef(1);
   const spotlightInputRef = useRef(null);
   const applyMagicLayoutRef = useRef(null);
@@ -823,21 +1553,21 @@ export default function App() {
     [setNodePositions, setNodes]
   );
 
-  const persistUiState = useCallback(async () => {
+  const persistUiState = useCallback(async (uiStateOverride) => {
     const response = await fetch(`${API_URL}/api/workspace/ui-state`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ui_state: buildUiState() }),
+      body: JSON.stringify({ ui_state: uiStateOverride || buildUiState() }),
     });
 
     if (!response.ok) {
       throw new Error(
-        await readError(response, "Не вдалося зберегти стан канвасу.")
+        await readError(response, copy.uiSaveFailed)
       );
     }
 
     return response.json();
-  }, [buildUiState]);
+  }, [buildUiState, copy]);
 
   const loadWorkspace = useCallback(async () => {
     try {
@@ -848,7 +1578,7 @@ export default function App() {
 
       if (!response.ok) {
         throw new Error(
-          await readError(response, "Не вдалося завантажити Context Git State.")
+          await readError(response, copy.workspaceLoadFailed)
         );
       }
 
@@ -866,20 +1596,35 @@ export default function App() {
           ? currentTopicId
           : nextTopics[0]?.id || null
       );
+      return workspace;
     } catch (requestError) {
       setError(
-        requestError instanceof Error
-          ? requestError.message
-          : "Не вдалося підключитися до локального бекенду."
+        getLocalizedRequestError(requestError, copy.backendUnavailable)
       );
     } finally {
       setIsLoadingWorkspace(false);
     }
-  }, [applyRestoredUiState]);
+  }, [applyRestoredUiState, copy]);
+
+  const loadOpenAiConfiguration = useCallback(async () => {
+    try {
+      const response = await fetch(`${API_URL}/api/config/openai`);
+
+      if (!response.ok) {
+        throw new Error(copy.openAiConfigUnavailable);
+      }
+
+      const configuration = await response.json();
+      setIsOpenAiConfigured(Boolean(configuration?.configured));
+    } catch {
+      setIsOpenAiConfigured(false);
+    }
+  }, [copy]);
 
   useEffect(() => {
-    loadWorkspace();
-  }, [loadWorkspace]);
+    void loadWorkspace();
+    void loadOpenAiConfiguration();
+  }, [loadOpenAiConfiguration, loadWorkspace]);
 
   useEffect(() => {
     if (!isLoadingWorkspace && researchTopics.length === 0 && findings.length === 0) {
@@ -905,6 +1650,68 @@ export default function App() {
     [activeTopicId, researchTopics]
   );
 
+  const graphSources = useMemo(() => {
+    const uniqueSources = new Map();
+
+    findings.forEach((finding) => {
+      if (!finding.source_id) return;
+      uniqueSources.set(finding.source_id, finding.source_title || "Research document");
+    });
+
+    return [...uniqueSources.entries()].map(([id, title]) => ({ id, title }));
+  }, [findings]);
+
+  const visibleFindings = useMemo(() => {
+    const searchQuery = graphSearch.trim().toLowerCase();
+    const minimumScore = minimumConfidence === "all" ? null : Number(minimumConfidence);
+
+    return findings.filter((finding) => {
+      if (focusActiveTopic && activeTopicId && finding.topic_id !== activeTopicId) {
+        return false;
+      }
+      if (graphSourceFilter !== "all" && finding.source_id !== graphSourceFilter) {
+        return false;
+      }
+      if (
+        minimumScore !== null &&
+        (!Number.isFinite(Number(finding.confidence_score)) ||
+          Number(finding.confidence_score) < minimumScore)
+      ) {
+        return false;
+      }
+      if (!searchQuery) return true;
+
+      return `${finding.title || ""} ${finding.details || ""}`
+        .toLowerCase()
+        .includes(searchQuery);
+    });
+  }, [activeTopicId, findings, focusActiveTopic, graphSearch, graphSourceFilter, minimumConfidence]);
+
+  const visibleTopicIds = useMemo(
+    () =>
+      new Set(
+        (focusActiveTopic && activeTopicId
+          ? [activeTopicId]
+          : researchTopics.map((topic) => topic.id)
+        ).filter(Boolean)
+      ),
+    [activeTopicId, focusActiveTopic, researchTopics]
+  );
+
+  const visibleTopics = useMemo(
+    () => researchTopics.filter((topic) => visibleTopicIds.has(topic.id)),
+    [researchTopics, visibleTopicIds]
+  );
+
+  const visibleFindingIds = useMemo(
+    () => new Set(visibleFindings.map((finding) => finding.id)),
+    [visibleFindings]
+  );
+
+  const toggleEdgeVisibility = useCallback((key) => {
+    setEdgeVisibility((current) => ({ ...current, [key]: !current[key] }));
+  }, []);
+
   const openNewTopic = useCallback(() => {
     setIngestMode("topic");
     setActiveTopicId(null);
@@ -912,6 +1719,7 @@ export default function App() {
     setText("");
     setSourceTitle("");
     setSourcePageCount(0);
+    setSourcePolicy("smart");
     setError("");
     setIsIngestModalOpen(true);
   }, []);
@@ -931,6 +1739,7 @@ export default function App() {
       setText("");
       setSourceTitle("");
       setSourcePageCount(0);
+      setSourcePolicy("smart");
       setError("");
       setIsIngestModalOpen(true);
     },
@@ -951,7 +1760,7 @@ export default function App() {
 
       if (!response.ok) {
         throw new Error(
-          await readError(response, "Не вдалося витягнути текст із джерела.")
+          await readError(response, copy.sourceExtractionFailed)
         );
       }
 
@@ -965,29 +1774,119 @@ export default function App() {
       setSourcePageCount(Number(extractedSource.page_count) || 0);
     } catch (requestError) {
       setError(
-        requestError instanceof Error
-          ? requestError.message
-          : "Не вдалося витягнути текст із джерела."
+        getLocalizedRequestError(requestError, copy.sourceExtractionFailed)
       );
     } finally {
       setIsExtractingSource(false);
     }
-  }, []);
+  }, [copy]);
+
+  const handleStartFreshWorkspace = useCallback(async () => {
+    const shouldReset = window.confirm(
+      copy.confirmReset
+    );
+
+    if (!shouldReset) return;
+
+    try {
+      setIsResettingWorkspace(true);
+      setError("");
+      setNotice("");
+
+      const response = await fetch(`${API_URL}/api/workspace/reset`, {
+        method: "POST",
+      });
+
+      if (!response.ok) {
+        throw new Error(
+          await readError(response, copy.resetFailed)
+        );
+      }
+
+      setSocraticDraft(null);
+      setDraftTargetFindingId(null);
+      setDraftTopicId(null);
+      setSelectedItem(null);
+      setSelectedNodeIds([]);
+      setSelectedDraftNodeId(null);
+      setActiveTopicId(null);
+      await loadWorkspace();
+    } catch (requestError) {
+      setError(
+        getLocalizedRequestError(requestError, copy.resetFailed)
+      );
+    } finally {
+      setIsResettingWorkspace(false);
+    }
+  }, [copy, loadWorkspace]);
+
+  const handleDeleteActiveTopic = useCallback(async () => {
+    if (!activeTopic) {
+      setError(copy.chooseTopicToDelete);
+      return;
+    }
+
+    const shouldDelete = window.confirm(
+      copy.confirmDeleteTopic(activeTopic.title)
+    );
+
+    if (!shouldDelete) return;
+
+    try {
+      setIsDeletingTopic(true);
+      setError("");
+      setNotice("");
+      await persistUiState();
+
+      const response = await fetch(
+        `${API_URL}/api/topics/${encodeURIComponent(activeTopic.id)}`,
+        { method: "DELETE" }
+      );
+
+      if (!response.ok) {
+        throw new Error(await readError(response, copy.deleteTopicFailed));
+      }
+
+      setSelectedItem(null);
+      setSelectedNodeIds([]);
+      setSelectedDraftNodeId(null);
+      setSocraticDraft(null);
+      setDraftTargetFindingId(null);
+      setDraftTopicId(null);
+      setActiveTopicId(null);
+      await loadWorkspace();
+      setNotice(copy.topicDeleted);
+    } catch (requestError) {
+      setError(
+        getLocalizedRequestError(requestError, copy.deleteTopicFailed)
+      );
+    } finally {
+      setIsDeletingTopic(false);
+    }
+  }, [activeTopic, copy, loadWorkspace, persistUiState]);
 
   const handleResearch = useCallback(async () => {
+    const sessionApiKey = apiKey.trim();
+
+    if (!sessionApiKey && !isOpenAiConfigured) {
+      setError(copy.requiresKey);
+      return;
+    }
+
     if (isExtractingSource) {
-      setError("Дочекайтеся завершення витягування тексту з джерела.");
+      setError(copy.waitForExtraction);
       return;
     }
 
     if (!query.trim() || !text.trim()) {
-      setError("Заповніть Active Query та Research Document перед аналізом.");
+      setError(copy.fillResearchFields);
       return;
     }
 
     try {
       setIsAnalyzing(true);
       setError("");
+      setNotice("");
       setSocraticDraft(null);
       setDraftTargetFindingId(null);
       await persistUiState();
@@ -1003,14 +1902,19 @@ export default function App() {
           topic_title: ingestMode === "topic" ? query.trim() : null,
           source_title: sourceTitle.trim() || "Research document",
           source_page_count: sourcePageCount,
+          source_policy: sourcePolicy,
+          api_key: sessionApiKey || undefined,
         }),
       });
 
       if (!response.ok) {
-        throw new Error(await readError(response, "AI-аналіз не виконався."));
+        throw new Error(await readError(response, copy.analysisFailed));
       }
 
       const data = await response.json();
+      const acceptedProposalCount = Array.isArray(data?.new_proposals)
+        ? data.new_proposals.length
+        : 0;
       const suggestedLayout =
         ["graph", "tree", "timeline", "comparison"].includes(
           data?.suggested_layout
@@ -1037,6 +1941,20 @@ export default function App() {
       setText("");
       setSourceTitle("");
       setSourcePageCount(0);
+      const topicFit = data?.topic_fit;
+      const topicFitSummary = topicFit
+        ? copy.topicFit(topicFit.score, topicFit.verdict, topicFit.reason)
+        : "";
+
+      setNotice(
+        data?.source_quarantined
+          ? copy.sourceQuarantined(topicFitSummary)
+          : data?.warning
+            ? `${localizeBackendWarning(data.warning, topicFit, copy)}${topicFitSummary ? ` ${topicFitSummary}` : ""}`
+            : acceptedProposalCount > 0
+              ? copy.createdProposals(acceptedProposalCount, topicFitSummary)
+              : copy.noProposalsAnalysis(topicFitSummary)
+      );
 
       await loadWorkspace();
 
@@ -1046,30 +1964,33 @@ export default function App() {
       }
     } catch (requestError) {
       setError(
-        requestError instanceof Error
-          ? requestError.message
-          : "Сталася помилка під час AI-аналізу."
+        getLocalizedRequestError(requestError, copy.analysisFailed)
       );
     } finally {
       setIsAnalyzing(false);
     }
   }, [
     activeTopicId,
+    apiKey,
     ingestMode,
     isExtractingSource,
+    isOpenAiConfigured,
     loadWorkspace,
     persistUiState,
     query,
     sourcePageCount,
+    sourcePolicy,
     sourceTitle,
     targetLang,
     text,
+    copy,
   ]);
 
   const handleProposalCommit = async (proposalId) => {
     try {
       setCommittingProposalId(proposalId);
       setError("");
+      setNotice("");
       await persistUiState();
 
       const response = await fetch(
@@ -1079,17 +2000,16 @@ export default function App() {
 
       if (!response.ok) {
         throw new Error(
-          await readError(response, "Не вдалося перенести proposal до Workspace.")
+          await readError(response, copy.proposalCommitFailed)
         );
       }
 
       setSelectedItem(null);
       await loadWorkspace();
+      setNotice(copy.proposalMerged);
     } catch (requestError) {
       setError(
-        requestError instanceof Error
-          ? requestError.message
-          : "Сталася помилка під час Merge to Workspace."
+        getLocalizedRequestError(requestError, copy.proposalCommitFailed)
       );
     } finally {
       setCommittingProposalId(null);
@@ -1098,45 +2018,142 @@ export default function App() {
 
   const handleDiscoverConnections = useCallback(async () => {
     if (!activeTopicId) {
-      setError("Спочатку виберіть research topic для пошуку зв’язків.");
+      setError(copy.chooseTopic);
+      return;
+    }
+
+    const sessionApiKey = apiKey.trim();
+    if (!sessionApiKey && !isOpenAiConfigured) {
+      setError(copy.noKeyForConnections);
+      return;
+    }
+
+    const activeTopicFindingCount = findings.filter(
+      (finding) => finding.topic_id === activeTopicId
+    ).length;
+    if (activeTopicFindingCount < 2) {
+      setNotice(copy.mergeMore(2 - activeTopicFindingCount));
       return;
     }
 
     try {
       setIsDiscoveringConnections(true);
       setError("");
+      setNotice("");
       await persistUiState();
       const response = await fetch(
         `${API_URL}/api/topics/${encodeURIComponent(activeTopicId)}/relations/discover`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ target_lang: targetLang }),
+          body: JSON.stringify({
+            target_lang: targetLang,
+            api_key: sessionApiKey || undefined,
+          }),
         }
       );
 
       if (!response.ok) {
         throw new Error(
-          await readError(response, "Не вдалося знайти зв’язки між фактами.")
+          await readError(response, copy.connectionDiscoveryFailed)
         );
       }
 
-      await loadWorkspace();
+      const discovery = await response.json();
+      const workspace = await loadWorkspace();
+      const firstCandidateSourceId = discovery?.relations?.[0]?.source_id;
+      const candidateSource = Array.isArray(workspace?.findings)
+        ? workspace.findings.find((finding) => finding.id === firstCandidateSourceId)
+        : null;
+
+      if (candidateSource) {
+        setSelectedItem({ kind: "finding", item: candidateSource });
+        setInspectorTab("state");
+      }
+      setNotice(
+        discovery?.created > 0
+          ? copy.discoveryCreated(discovery.created)
+          : copy.noConnections
+      );
     } catch (requestError) {
       setError(
-        requestError instanceof Error
-          ? requestError.message
-          : "Не вдалося знайти зв’язки між фактами."
+        getLocalizedRequestError(requestError, copy.connectionDiscoveryFailed)
       );
     } finally {
       setIsDiscoveringConnections(false);
     }
-  }, [activeTopicId, loadWorkspace, persistUiState, targetLang]);
+  }, [activeTopicId, apiKey, copy, findings, isOpenAiConfigured, loadWorkspace, persistUiState, targetLang]);
+
+  const handleApproveRelation = useCallback(
+    async (sourceFindingId, relationId) => {
+      try {
+        setReviewingRelationId(relationId);
+        setError("");
+        await persistUiState();
+
+        const response = await fetch(
+          `${API_URL}/api/findings/${encodeURIComponent(sourceFindingId)}/relations/${encodeURIComponent(relationId)}/approve`,
+          { method: "POST", headers: { "Content-Type": "application/json" } }
+        );
+
+        if (!response.ok) {
+          throw new Error(await readError(response, copy.aiApproveFailed));
+        }
+
+        setSelectedItem(null);
+        await loadWorkspace();
+        setNotice(copy.relationApproved);
+      } catch (requestError) {
+        setError(
+          getLocalizedRequestError(requestError, copy.aiApproveFailed)
+        );
+      } finally {
+        setReviewingRelationId(null);
+      }
+    },
+    [copy, loadWorkspace, persistUiState]
+  );
+
+  const handleRejectRelation = useCallback(
+    async (sourceFindingId, relationId) => {
+      try {
+        setReviewingRelationId(relationId);
+        setError("");
+        await persistUiState();
+
+        const response = await fetch(
+          `${API_URL}/api/findings/${encodeURIComponent(sourceFindingId)}/relations/${encodeURIComponent(relationId)}`,
+          { method: "DELETE" }
+        );
+
+        if (!response.ok) {
+          throw new Error(await readError(response, copy.aiRejectFailed));
+        }
+
+        setSelectedItem(null);
+        await loadWorkspace();
+        setNotice(copy.relationRejected);
+      } catch (requestError) {
+        setError(
+          getLocalizedRequestError(requestError, copy.aiRejectFailed)
+        );
+      } finally {
+        setReviewingRelationId(null);
+      }
+    },
+    [copy, loadWorkspace, persistUiState]
+  );
 
   const handleSocraticReview = useCallback(async () => {
     const selectedNode = nodes.find(
       (node) => node.selected && node.type === "fact"
     );
+    const sessionApiKey = apiKey.trim();
+
+    if (!sessionApiKey && !isOpenAiConfigured) {
+      setError(copy.requiresKey);
+      return;
+    }
 
     try {
       setIsReviewing(true);
@@ -1148,14 +2165,18 @@ export default function App() {
         body: JSON.stringify({
           target_lang: targetLang,
           fact_id: selectedNode?.data?.finding?.id,
-          fact_text: selectedNode?.data?.label,
+          fact_text:
+            selectedNode?.data?.finding?.details ||
+            selectedNode?.data?.label ||
+            undefined,
           topic_id: selectedNode?.data?.finding?.topic_id || activeTopicId,
+          api_key: sessionApiKey || undefined,
         }),
       });
 
       if (!response.ok) {
         throw new Error(
-          await readError(response, "Context Co-Pilot не зміг створити draft.")
+          await readError(response, copy.reviewFailed)
         );
       }
 
@@ -1168,14 +2189,12 @@ export default function App() {
       setInspectorTab("state");
     } catch (requestError) {
       setError(
-        requestError instanceof Error
-          ? requestError.message
-          : "Сталася помилка під Context Co-Pilot review."
+        getLocalizedRequestError(requestError, copy.reviewFailed)
       );
     } finally {
       setIsReviewing(false);
     }
-  }, [activeTopicId, nodes, targetLang]);
+  }, [activeTopicId, apiKey, copy, isOpenAiConfigured, nodes, targetLang]);
 
   const handleSocraticCommit = useCallback(async () => {
     if (!socraticDraft?.proposed_hypothesis) return;
@@ -1195,7 +2214,7 @@ export default function App() {
 
       if (!response.ok) {
         throw new Error(
-          await readError(response, "Не вдалося виконати Resolve & Merge.")
+          await readError(response, copy.mergeFailed)
         );
       }
 
@@ -1206,15 +2225,14 @@ export default function App() {
       await loadWorkspace();
     } catch (requestError) {
       setError(
-        requestError instanceof Error
-          ? requestError.message
-          : "Сталася помилка під час Resolve & Merge."
+        getLocalizedRequestError(requestError, copy.mergeFailed)
       );
     } finally {
       setIsMergingDraft(false);
     }
   }, [
     activeTopicId,
+    copy,
     draftTopicId,
     loadWorkspace,
     persistUiState,
@@ -1233,7 +2251,10 @@ export default function App() {
     const topicIndexById = new Map(
       researchTopics.map((topic, index) => [topic.id, index])
     );
-    const topicFlowNodes = researchTopics.map((topic, index) => ({
+    const topicFlowNodes = visibleTopics.map((topic) => {
+      const index = topicIndexById.get(topic.id) ?? 0;
+
+      return {
       id: `topic-${topic.id}`,
       type: "root",
       position: getSavedPosition(
@@ -1243,13 +2264,15 @@ export default function App() {
       ),
       data: {
         root: topic,
+        copy,
         onOpenIngest: () => openSourceIngestion(topic.id),
       },
       zIndex: 3,
-    }));
+      };
+    });
 
     const factCountByTopic = new Map();
-    const baseFactNodes = findings.map((finding, index) => {
+    const baseFactNodes = visibleFindings.map((finding, index) => {
       const topicIndex = topicIndexById.get(finding.topic_id) ?? 0;
       const factIndex = factCountByTopic.get(finding.topic_id) ?? index;
       factCountByTopic.set(finding.topic_id, factIndex + 1);
@@ -1263,7 +2286,15 @@ export default function App() {
           nodeId,
           getFactPosition(topicIndex, factIndex)
         ),
-        data: { finding, label: finding.details },
+        data: {
+          finding,
+          copy,
+          label: finding.details,
+          isRelationEndpoint:
+            selectedItem?.kind === "relation" &&
+            (selectedItem.item.source_finding_id === finding.id ||
+              selectedItem.item.target_id === finding.id),
+        },
         zIndex: 1,
       };
     });
@@ -1298,7 +2329,7 @@ export default function App() {
         draggable: false,
         position: frame.position,
         style: { width: frame.width, height: frame.height },
-        data: { label: layer.label, memberCount: layer.members.length },
+        data: { label: layer.label, memberCount: layer.members.length, copy },
         zIndex: 0,
       };
     });
@@ -1323,7 +2354,8 @@ export default function App() {
       (finding) => `finding-${finding.id}` === draftTargetFindingId
     );
     const draftTopicIndex = topicIndexById.get(draftTarget?.topic_id || activeTopicId) ?? 0;
-    const draftNode = socraticDraft
+    const draftNode = socraticDraft && edgeVisibility.drafts &&
+      (!draftTargetFindingId || visibleFindingIds.has(draftTarget?.id))
       ? [
           {
             id: "socratic-draft",
@@ -1335,6 +2367,7 @@ export default function App() {
             ),
             data: {
               draft: socraticDraft,
+              copy,
               targetTitle: draftTarget?.title,
               onMerge: handleSocraticCommit,
               onReject: handleRejectDraft,
@@ -1352,7 +2385,9 @@ export default function App() {
   }, [
     activeTopicId,
     contextLayers,
+    copy,
     draftTargetFindingId,
+    edgeVisibility.drafts,
     findings,
     handleRejectDraft,
     handleSocraticCommit,
@@ -1360,15 +2395,20 @@ export default function App() {
     nodePositions,
     openSourceIngestion,
     researchTopics,
+    selectedItem,
     setNodes,
     socraticDraft,
+    visibleFindingIds,
+    visibleFindings,
+    visibleTopics,
   ]);
 
   useEffect(() => {
-    const findingIds = new Set(findings.map((finding) => finding.id));
-    const findingNodeIds = new Set(findings.map((finding) => `finding-${finding.id}`));
-    const topicNodeIds = new Set(researchTopics.map((topic) => `topic-${topic.id}`));
-    const topicEdges = findings
+    const findingIds = new Set(visibleFindings.map((finding) => finding.id));
+    const findingNodeIds = new Set(visibleFindings.map((finding) => `finding-${finding.id}`));
+    const topicNodeIds = new Set(visibleTopics.map((topic) => `topic-${topic.id}`));
+    const topicEdges = edgeVisibility.evidenceTrails
+      ? visibleFindings
       .filter(
         (finding) =>
           finding.topic_id && topicNodeIds.has(`topic-${finding.topic_id}`)
@@ -1384,44 +2424,84 @@ export default function App() {
         labelStyle: { fill: "#7dd3fc", fontSize: 10 },
         labelBgStyle: { fill: "#0f172a", fillOpacity: 0.92 },
         data: { system: "topic" },
-      }));
-    const relationEdges = findings.flatMap((finding) =>
+      }))
+      : [];
+    const relationEdges = visibleFindings.flatMap((finding) =>
       (finding.relations || [])
         .filter((relation) => findingIds.has(relation.target_id))
+        .filter((relation) => {
+          if (relation.status === "candidate") return edgeVisibility.candidates;
+          if (relation.status === "hypothesis") return edgeVisibility.hypotheses;
+          if (relation.origin === "manual") return edgeVisibility.manual;
+          return edgeVisibility.verified;
+        })
         .map((relation) => {
           const isManualRelation = relation.origin === "manual";
-          const edgeColor = isManualRelation ? "#a78bfa" : "#22d3ee";
+          const isCandidateRelation = relation.status === "candidate";
+          const isCrossTopicHypothesis = relation.status === "hypothesis";
+          const edgeColor = isCandidateRelation
+            ? "#facc15"
+            : isManualRelation
+              ? "#a78bfa"
+              : "#22d3ee";
+          const relationId = relation.id || `${relation.target_id}-${relation.type}`;
+          const displayLabel = isCandidateRelation
+            ? `${copy.review} · ${formatRelationType(relation.type, uiLanguage)}${relation.confidence_score ? ` · ${relation.confidence_score}%` : ""}`
+            : isCrossTopicHypothesis
+              ? formatRelationType("cross-topic hypothesis", uiLanguage)
+              : relation.confidence_score
+                ? `${formatRelationType(relation.type, uiLanguage)} · ${relation.confidence_score}%`
+                : formatRelationType(relation.type, uiLanguage);
 
           return {
-            id: `relation-${finding.id}-${relation.target_id}-${relation.type}`,
+            id: `relation-${finding.id}-${relationId}`,
             source: `finding-${finding.id}`,
             target: `finding-${relation.target_id}`,
-            label: relation.confidence_score
-              ? `${relation.type} · ${relation.confidence_score}%`
-              : relation.type,
+            label: displayLabel,
             type: "smoothstep",
-            animated: !isManualRelation,
+            animated: isCandidateRelation,
             deletable: isManualRelation,
             markerEnd: { type: MarkerType.ArrowClosed, color: edgeColor },
-            style: { stroke: edgeColor, strokeWidth: isManualRelation ? 2 : 1.5 },
-            labelStyle: { fill: isManualRelation ? "#c4b5fd" : "#94a3b8", fontSize: 11 },
+            style: {
+              stroke: edgeColor,
+              strokeWidth: isCandidateRelation || isManualRelation ? 2 : 1.5,
+              ...(isCandidateRelation || isCrossTopicHypothesis
+                ? { strokeDasharray: "5, 5" }
+                : {}),
+            },
+            labelStyle: {
+              fill: isCandidateRelation
+                ? "#fde047"
+                : isManualRelation
+                  ? "#c4b5fd"
+                  : "#94a3b8",
+              fontSize: 11,
+            },
             labelBgStyle: { fill: "#0f172a", fillOpacity: 0.92 },
             data: {
-              system: isManualRelation ? "manual-persisted" : "relation",
+              system: isCandidateRelation
+                ? "candidate-relation"
+                : isManualRelation
+                  ? "manual-persisted"
+                  : "relation",
               sourceFindingId: finding.id,
               targetFindingId: relation.target_id,
+              relationId,
+              relationStatus: relation.status || "verified",
+              relationOrigin: relation.origin || "ai",
             },
           };
         }));
 
     const conflictEdge =
+      edgeVisibility.drafts &&
       socraticDraft && draftTargetFindingId && findingNodeIds.has(draftTargetFindingId)
         ? [
             {
               id: `conflict-socratic-draft-${draftTargetFindingId}`,
               source: "socratic-draft",
               target: draftTargetFindingId,
-              label: "red-team challenge",
+              label: copy.redTeam,
               type: "smoothstep",
               animated: true,
               markerEnd: { type: MarkerType.ArrowClosed, color: "#ef4444" },
@@ -1438,27 +2518,32 @@ export default function App() {
         : [];
 
     const validNodeIds = new Set([
-      ...researchTopics.map((topic) => `topic-${topic.id}`),
-      ...findings.map((finding) => `finding-${finding.id}`),
-      ...(socraticDraft ? ["socratic-draft"] : []),
+      ...visibleTopics.map((topic) => `topic-${topic.id}`),
+      ...visibleFindings.map((finding) => `finding-${finding.id}`),
+      ...(socraticDraft && edgeVisibility.drafts ? ["socratic-draft"] : []),
     ]);
 
     setEdges(() => {
-      const validManualEdges = manualEdges.filter(
-        (edge) =>
+      const validManualEdges = edgeVisibility.manual
+        ? manualEdges.filter(
+          (edge) =>
           validNodeIds.has(edge.source) &&
           validNodeIds.has(edge.target)
-      );
+        )
+        : [];
 
       return [...topicEdges, ...relationEdges, ...conflictEdge, ...validManualEdges];
     });
   }, [
     draftTargetFindingId,
-    findings,
+    edgeVisibility,
     manualEdges,
-    researchTopics,
     setEdges,
     socraticDraft,
+    visibleFindings,
+    visibleTopics,
+    uiLanguage,
+    copy,
   ]);
 
   const handleNodesChange = useCallback(
@@ -1512,32 +2597,30 @@ export default function App() {
   );
 
   const removePersistedManualRelation = useCallback(
-    async (sourceFindingId, targetFindingId) => {
+    async (sourceFindingId, relationId) => {
       try {
         setError("");
         await persistUiState();
         const response = await fetch(
-          `${API_URL}/api/findings/${encodeURIComponent(sourceFindingId)}/relations/${encodeURIComponent(targetFindingId)}`,
+          `${API_URL}/api/findings/${encodeURIComponent(sourceFindingId)}/relations/${encodeURIComponent(relationId)}`,
           { method: "DELETE" }
         );
 
         if (!response.ok) {
           throw new Error(
-            await readError(response, "Не вдалося видалити ручний зв’язок.")
+            await readError(response, copy.manualRelationFailed)
           );
         }
 
         await loadWorkspace();
       } catch (requestError) {
         setError(
-          requestError instanceof Error
-            ? requestError.message
-            : "Не вдалося видалити ручний зв’язок."
+          getLocalizedRequestError(requestError, copy.manualRelationFailed)
         );
         await loadWorkspace();
       }
     },
-    [loadWorkspace, persistUiState]
+    [copy, loadWorkspace, persistUiState]
   );
 
   const handleEdgesChange = useCallback(
@@ -1561,7 +2644,7 @@ export default function App() {
           .forEach((edge) => {
             void removePersistedManualRelation(
               edge.data.sourceFindingId,
-              edge.data.targetFindingId
+              edge.data.relationId
             );
           });
       }
@@ -1575,49 +2658,87 @@ export default function App() {
         return;
       }
 
+      const duplicateExists = manualEdges.some(
+        (edge) =>
+          edge.source === connection.source && edge.target === connection.target
+      );
+
+      if (duplicateExists) {
+        return;
+      }
+
+      const sourceFindingId = connection.source.startsWith("finding-")
+        ? connection.source.replace("finding-", "")
+        : null;
+      const targetFindingId = connection.target.startsWith("finding-")
+        ? connection.target.replace("finding-", "")
+        : null;
+      const sourceFinding = sourceFindingId
+        ? findings.find((finding) => finding.id === sourceFindingId)
+        : null;
+      const targetFinding = targetFindingId
+        ? findings.find((finding) => finding.id === targetFindingId)
+        : null;
+      const isCrossTopicHypothesis = Boolean(
+        sourceFinding &&
+          targetFinding &&
+          sourceFinding.topic_id !== targetFinding.topic_id
+      );
       const edgeId = `manual-${connection.source}-${connection.target}-${Date.now()}`;
       const nextManualEdge = {
         ...connection,
         id: edgeId,
         type: "smoothstep",
-        label: "manual link",
+        label: formatRelationType(
+          isCrossTopicHypothesis ? "cross-topic hypothesis" : "manual link",
+          uiLanguage
+        ),
         markerEnd: { type: MarkerType.ArrowClosed, color: "#a78bfa" },
-        style: { stroke: "#a78bfa", strokeWidth: 2 },
+        style: {
+          stroke: "#a78bfa",
+          strokeWidth: 2,
+          ...(isCrossTopicHypothesis ? { strokeDasharray: "5, 5" } : {}),
+        },
         labelStyle: { fill: "#c4b5fd", fontSize: 11 },
         labelBgStyle: { fill: "#0f172a", fillOpacity: 0.92 },
-        data: { system: "manual" },
+        data: {
+          system: "manual",
+          relationStatus: isCrossTopicHypothesis ? "hypothesis" : "verified",
+        },
       };
 
-      setManualEdges((currentEdges) => {
-        const duplicateExists = currentEdges.some(
-          (edge) => edge.source === connection.source && edge.target === connection.target
-        );
+      const nextManualEdges = addEdge(nextManualEdge, manualEdges);
+      setManualEdges(nextManualEdges);
 
-        return duplicateExists ? currentEdges : addEdge(nextManualEdge, currentEdges);
-      });
+      const nextUiState = {
+        ...buildUiState(),
+        manual_edges: nextManualEdges,
+      };
 
       if (
         connection.source.startsWith("finding-") &&
         connection.target.startsWith("finding-")
       ) {
-        const sourceFindingId = connection.source.replace("finding-", "");
-        const targetFindingId = connection.target.replace("finding-", "");
-
         void (async () => {
           try {
-            await persistUiState();
+            await persistUiState(nextUiState);
             const response = await fetch(
               `${API_URL}/api/findings/${encodeURIComponent(sourceFindingId)}/relations`,
               {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ target_id: targetFindingId, type: "manual link" }),
+                body: JSON.stringify({
+                  target_id: targetFindingId,
+                  type: isCrossTopicHypothesis
+                    ? "cross-topic hypothesis"
+                    : "manual link",
+                }),
               }
             );
 
             if (!response.ok) {
               throw new Error(
-                await readError(response, "Не вдалося зберегти ручний зв’язок.")
+                await readError(response, copy.manualRelationFailed)
               );
             }
 
@@ -1627,15 +2748,19 @@ export default function App() {
             await loadWorkspace();
           } catch (requestError) {
             setError(
-              requestError instanceof Error
-                ? requestError.message
-                : "Ручний зв’язок збережено лише локально."
+              getLocalizedRequestError(requestError, copy.manualRelationFailed)
             );
           }
         })();
+      } else {
+        void persistUiState(nextUiState).catch((requestError) => {
+          setError(
+            getLocalizedRequestError(requestError, copy.manualRelationFailed)
+          );
+        });
       }
     },
-    [loadWorkspace, persistUiState]
+    [buildUiState, copy, findings, loadWorkspace, manualEdges, persistUiState, uiLanguage]
   );
 
   const handleNodeClick = useCallback((event, node) => {
@@ -1660,6 +2785,47 @@ export default function App() {
       setInspectorTab("state");
     }
   }, [openSourceIngestion]);
+
+  const handleEdgeClick = useCallback(
+    (event, edge) => {
+      event.stopPropagation();
+      const relationId = edge.data?.relationId;
+      const sourceFindingId = edge.data?.sourceFindingId;
+
+      if (!relationId || !sourceFindingId) {
+        return;
+      }
+
+      const sourceFinding = findings.find(
+        (finding) => finding.id === sourceFindingId
+      );
+      const relation = sourceFinding?.relations?.find(
+        (item) => item.id === relationId
+      );
+
+      if (!sourceFinding || !relation) {
+        setError(copy.relationUnavailable);
+        return;
+      }
+
+      const targetFinding = findings.find(
+        (finding) => finding.id === relation.target_id
+      );
+      setSelectedItem({
+        kind: "relation",
+        item: {
+          ...relation,
+          source_finding_id: sourceFinding.id,
+          source_title: sourceFinding.title,
+          target_title: targetFinding?.title || relation.target_id,
+        },
+      });
+      setSelectedDraftNodeId(null);
+      setInspectorTab("state");
+      setError("");
+    },
+    [copy, findings]
+  );
 
   const handleSelectionChange = useCallback(({ nodes: selectedNodes }) => {
     setSelectedNodeIds(
@@ -1719,7 +2885,7 @@ export default function App() {
     );
 
     if (groupableNodes.length < 2) {
-      setError("Виділіть щонайменше дві непогруповані Fact Nodes для Context Layer.");
+      setError(copy.groupSelection);
       return;
     }
 
@@ -1729,13 +2895,13 @@ export default function App() {
       ...currentLayers,
       {
         id: `context-layer-${Date.now()}`,
-        label: `Context Layer ${layerNumber}`,
+        label: `${copy.contextLayer} ${layerNumber}`,
         memberIds: groupableNodes.map((node) => node.id),
       },
     ]);
     setSelectedNodeIds([]);
     setError("");
-  }, [nodes, selectedNodeIds]);
+  }, [copy, nodes, selectedNodeIds]);
 
   function applyMagicLayout(requestedLayoutMode = layoutMode) {
     const activeLayoutMode = ["graph", "tree", "timeline", "comparison"].includes(
@@ -1815,15 +2981,12 @@ export default function App() {
   applyMagicLayoutRef.current = applyMagicLayout;
 
   const generateMarkdownReport = useCallback(() => {
-    const verifiedFacts = nodes.filter(
-      (node) => node.type === "fact" && node.data?.finding
-    );
+    const verifiedFacts = findings;
 
     const report = [
       "# Flow-AI Cyber Report",
       "",
-      ...verifiedFacts.flatMap((node) => {
-        const finding = node.data.finding;
+      ...verifiedFacts.flatMap((finding) => {
         const evidence = Array.isArray(finding.evidence)
           ? finding.evidence
               .map((item) => item?.quote)
@@ -1850,11 +3013,37 @@ export default function App() {
     anchor.click();
     document.body.removeChild(anchor);
     URL.revokeObjectURL(url);
-  }, [nodes]);
+  }, [findings]);
 
   const selectedEvidence = selectedItem
     ? getEvidence(selectedItem.item, selectedItem.kind === "draft")
     : [];
+
+  const pendingRelationReviews =
+    selectedItem?.kind === "finding"
+      ? (selectedItem.item.relations || [])
+          .filter(
+            (relation) =>
+              relation?.origin === "ai" && relation?.status === "candidate"
+          )
+          .map((relation) => ({
+            ...relation,
+            targetTitle:
+              findings.find((finding) => finding.id === relation.target_id)?.title ||
+              relation.target_id,
+            sourceFindingId: selectedItem.item.id,
+          }))
+      : selectedItem?.kind === "relation" &&
+          selectedItem.item.origin === "ai" &&
+          selectedItem.item.status === "candidate"
+        ? [
+            {
+              ...selectedItem.item,
+              targetTitle: selectedItem.item.target_title,
+              sourceFindingId: selectedItem.item.source_finding_id,
+            },
+          ]
+      : [];
 
   const inspectorState = selectedItem
     ? selectedItem.kind === "draft"
@@ -1866,6 +3055,20 @@ export default function App() {
           socratic_questions: selectedItem.item.socratic_questions,
           proposed_hypothesis: selectedItem.item.proposed_hypothesis,
         }
+      : selectedItem.kind === "relation"
+        ? {
+            id: selectedItem.item.id,
+            status: selectedItem.item.status || "verified",
+            origin: selectedItem.item.origin || "ai",
+            type: selectedItem.item.type,
+            source_finding_id: selectedItem.item.source_finding_id,
+            source_title: selectedItem.item.source_title,
+            target_id: selectedItem.item.target_id,
+            target_title: selectedItem.item.target_title,
+            confidence_score: selectedItem.item.confidence_score,
+            evidence: selectedItem.item.evidence || null,
+            reason: selectedItem.item.reason || null,
+          }
       : {
           ...selectedItem.item,
           timestamp:
@@ -1878,8 +3081,11 @@ export default function App() {
   const inspectorReasoning = selectedItem
     ? selectedItem.kind === "draft"
       ? selectedItem.item.identified_gap
+      : selectedItem.kind === "relation"
+        ? selectedItem.item.reason ||
+          "No additional rationale was supplied for this graph relation."
       : selectedItem.item.details
-    : "Виберіть proposal у AI Inbox або verified fact на канвасі, щоб переглянути його Context Git State.";
+    : copy.noSelection;
 
   const handleCheckout = useCallback(
     async (revision) => {
@@ -1897,7 +3103,7 @@ export default function App() {
         );
 
         if (!response.ok) {
-          throw new Error(await readError(response, "Не вдалося відновити revision."));
+          throw new Error(await readError(response, copy.checkoutFailed));
         }
 
         const data = await response.json();
@@ -1910,15 +3116,13 @@ export default function App() {
         await loadWorkspace();
       } catch (requestError) {
         setError(
-          requestError instanceof Error
-            ? requestError.message
-            : "Не вдалося відновити revision."
+          getLocalizedRequestError(requestError, copy.checkoutFailed)
         );
       } finally {
         setIsCheckingOut(false);
       }
     },
-    [applyRestoredUiState, buildUiState, loadWorkspace]
+    [applyRestoredUiState, buildUiState, copy, loadWorkspace]
   );
 
   const historyEntries = useMemo(
@@ -1927,10 +3131,17 @@ export default function App() {
   );
 
   const visibleProposals = useMemo(
-    () =>
-      activeTopicId
+    () => {
+      const scopedProposals = activeTopicId
         ? proposals.filter((proposal) => proposal.topic_id === activeTopicId)
-        : proposals,
+        : proposals;
+
+      return [...scopedProposals].sort(
+        (left, right) =>
+          Number(right.confidence_score ?? -1) -
+          Number(left.confidence_score ?? -1)
+      );
+    },
     [activeTopicId, proposals]
   );
 
@@ -1938,6 +3149,7 @@ export default function App() {
     <main className="h-screen overflow-hidden bg-[#0B1120] text-slate-100">
       <div className="grid h-full grid-rows-[auto_minmax(0,1fr)]">
         <TopBar
+          copy={copy}
           activeMode={activeMode}
           setActiveMode={setActiveMode}
           layoutMode={layoutMode}
@@ -1952,16 +3164,17 @@ export default function App() {
           onDownloadReport={generateMarkdownReport}
           isReviewing={isReviewing}
           error={error}
+          notice={notice}
         />
 
         <div className="grid min-h-0 grid-cols-1 xl:grid-cols-[280px_minmax(0,1fr)_340px]">
           <aside className="flex min-h-0 flex-col border-r border-slate-800 bg-[#0F172A]">
             <div className="border-b border-slate-800 px-4 py-4">
               <p className="text-[10px] font-extrabold uppercase tracking-[0.18em] text-orange-400">
-                AI Inbox
+                {copy.aiInbox}
               </p>
               <div className="mt-1 flex items-center justify-between">
-                <h2 className="font-bold text-white">Proposals</h2>
+                <h2 className="font-bold text-white">{copy.proposals}</h2>
                 <span className="rounded-full bg-orange-400/10 px-2 py-0.5 text-xs font-bold text-orange-300">
                   {visibleProposals.length}
                 </span>
@@ -1970,16 +3183,19 @@ export default function App() {
 
             <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-3">
               {isLoadingWorkspace ? (
-                <p className="py-8 text-center text-sm text-slate-500">Loading inbox...</p>
+                <p className="py-8 text-center text-sm text-slate-500">{copy.loadingInbox}</p>
               ) : visibleProposals.length === 0 ? (
                 <div className="rounded-xl border border-dashed border-slate-700 p-4 text-center text-sm text-slate-500">
                   {activeTopic
-                    ? "Для цієї теми ще немає proposals. Додайте paper або інше джерело."
-                    : "Inbox порожній. Створіть research topic, щоб почати аналіз."}
+                    ? copy.noProposalsTopic
+                    : copy.noProposalsWorkspace}
                 </div>
               ) : (
-                visibleProposals.map((proposal) => (
-                  <article
+                visibleProposals.map((proposal) => {
+                  const confidenceTier = getConfidenceTier(proposal);
+
+                  return (
+                    <article
                     key={proposal.id}
                     role="button"
                     tabIndex={0}
@@ -2010,11 +3226,11 @@ export default function App() {
                       </span>
                     </div>
                     <p className="mt-1 text-[10px] font-bold uppercase tracking-wider text-slate-500">
-                      Intrinsic Score
+                      {copy.evidenceConfidence} · <span className={confidenceTier.className}>{confidenceTier.label}</span>
                     </p>
                     {proposal.source_title && (
                       <p className="mt-2 truncate text-[10px] font-semibold text-cyan-300/80">
-                        Source: {proposal.source_title}
+                        {copy.source}: {proposal.source_title}
                       </p>
                     )}
                     <p className="mt-2 line-clamp-2 text-xs leading-5 text-slate-400">
@@ -2030,29 +3246,30 @@ export default function App() {
                       className="mt-3 w-full rounded-lg border border-emerald-500/60 bg-emerald-500/10 px-2 py-2 text-xs font-bold text-emerald-300 transition hover:bg-emerald-400 hover:text-slate-950 disabled:cursor-not-allowed disabled:opacity-60"
                     >
                       {committingProposalId === proposal.id
-                        ? "Merging..."
-                        : "Merge to Workspace"}
+                        ? copy.merging
+                        : copy.mergeWorkspace}
                     </button>
                   </article>
-                ))
+                  );
+                })
               )}
             </div>
           </aside>
 
-          <section className="relative min-h-0 bg-[#0B1120]" aria-label="Knowledge graph canvas">
+          <section className="relative min-h-0 bg-[#0B1120]" aria-label={copy.canvasLabel}>
             <div className="absolute left-4 top-4 z-10 max-w-[calc(100%-2rem)] rounded-lg border border-slate-700/80 bg-slate-900/90 px-3 py-2 backdrop-blur">
               <p className="text-[10px] font-extrabold uppercase tracking-[0.16em] text-cyan-400">
-                Active research topic
+                {copy.activeTopic}
               </p>
               <div className="mt-1.5 flex flex-wrap items-center gap-2">
                 <select
                   value={activeTopicId || ""}
                   onChange={(event) => setActiveTopicId(event.target.value || null)}
                   className="max-w-56 rounded-md border border-slate-700 bg-slate-950 px-2 py-1.5 text-xs font-semibold text-slate-200 outline-none focus:border-cyan-400"
-                  aria-label="Active research topic"
+                  aria-label={copy.activeTopic}
                 >
                   <option value="" disabled>
-                    Select a topic
+                    {copy.selectTopic}
                   </option>
                   {researchTopics.map((topic) => (
                     <option key={topic.id} value={topic.id}>
@@ -2065,7 +3282,7 @@ export default function App() {
                   onClick={openNewTopic}
                   className="rounded-md border border-cyan-400/50 bg-cyan-400/10 px-2.5 py-1.5 text-xs font-extrabold text-cyan-200 transition hover:bg-cyan-400 hover:text-slate-950"
                 >
-                  + New topic
+                  {copy.newTopic}
                 </button>
                 <button
                   type="button"
@@ -2073,17 +3290,103 @@ export default function App() {
                   disabled={!activeTopic}
                   className="rounded-md border border-emerald-400/50 bg-emerald-400/10 px-2.5 py-1.5 text-xs font-extrabold text-emerald-200 transition hover:bg-emerald-400 hover:text-slate-950 disabled:cursor-not-allowed disabled:opacity-40"
                 >
-                  + Add paper
+                  {copy.addPaper}
+                </button>
+                <button
+                  type="button"
+                  onClick={handleDeleteActiveTopic}
+                  disabled={!activeTopic || isDeletingTopic}
+                  className="rounded-md border border-rose-400/55 bg-rose-400/10 px-2.5 py-1.5 text-xs font-extrabold text-rose-200 transition hover:bg-rose-400 hover:text-slate-950 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  {isDeletingTopic ? copy.deleting : copy.deleteTopic}
                 </button>
               </div>
               <p className="mt-2 text-xs text-slate-400">
-                Topic roots create evidence trails automatically. Switch to Manual to draw your own links.
+                {copy.graphIntro}
               </p>
+              <details className="mt-3 border-t border-slate-700/80 pt-3">
+                <summary className="cursor-pointer text-xs font-extrabold uppercase tracking-[0.14em] text-cyan-300 marker:text-cyan-400">
+                  {copy.graphFilters}
+                </summary>
+                <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                  <input
+                    type="search"
+                    value={graphSearch}
+                    onChange={(event) => setGraphSearch(event.target.value)}
+                    placeholder={copy.searchFindings}
+                    className="min-w-0 rounded-md border border-slate-700 bg-slate-950 px-2.5 py-2 text-xs text-slate-200 outline-none placeholder:text-slate-600 focus:border-cyan-400"
+                    aria-label={copy.searchFindings}
+                  />
+                  <select
+                    value={graphSourceFilter}
+                    onChange={(event) => setGraphSourceFilter(event.target.value)}
+                    className="min-w-0 rounded-md border border-slate-700 bg-slate-950 px-2.5 py-2 text-xs text-slate-200 outline-none focus:border-cyan-400"
+                    aria-label={copy.filterBySource}
+                  >
+                    <option value="all">{copy.allSources}</option>
+                    {graphSources.map((source) => (
+                      <option key={source.id} value={source.id}>
+                        {source.title}
+                      </option>
+                    ))}
+                  </select>
+                  <select
+                    value={minimumConfidence}
+                    onChange={(event) => setMinimumConfidence(event.target.value)}
+                    className="min-w-0 rounded-md border border-slate-700 bg-slate-950 px-2.5 py-2 text-xs text-slate-200 outline-none focus:border-cyan-400"
+                    aria-label={copy.minimumConfidence}
+                  >
+                    <option value="all">{copy.anyConfidence}</option>
+                    <option value="85">{copy.highConfidence}</option>
+                    <option value="65">{copy.mediumConfidence}</option>
+                  </select>
+                  <button
+                    type="button"
+                    onClick={() => setFocusActiveTopic((current) => !current)}
+                    disabled={!activeTopic}
+                    className={`rounded-md border px-2.5 py-2 text-xs font-bold transition disabled:cursor-not-allowed disabled:opacity-40 ${
+                      focusActiveTopic
+                        ? "border-cyan-300 bg-cyan-400 text-slate-950"
+                        : "border-slate-700 bg-slate-950 text-slate-300 hover:border-cyan-400/70"
+                    }`}
+                  >
+                    {focusActiveTopic ? copy.focusedTopic : copy.focusTopic}
+                  </button>
+                </div>
+                <div className="mt-3 flex flex-wrap gap-1.5">
+                  {[
+                    ["evidenceTrails", copy.trail, "bg-sky-400"],
+                    ["verified", copy.verified, "bg-cyan-400"],
+                    ["candidates", copy.review, "bg-yellow-400"],
+                    ["manual", copy.manual, "bg-violet-400"],
+                    ["hypotheses", copy.hypothesis, "bg-violet-300"],
+                    ["drafts", copy.redTeam, "bg-rose-400"],
+                  ].map(([key, label, colorClass]) => (
+                    <button
+                      key={key}
+                      type="button"
+                      onClick={() => toggleEdgeVisibility(key)}
+                      aria-pressed={edgeVisibility[key]}
+                      className={`inline-flex items-center gap-1.5 rounded-full border px-2 py-1 text-[10px] font-bold transition ${
+                        edgeVisibility[key]
+                          ? "border-slate-600 bg-slate-950 text-slate-200"
+                          : "border-slate-800 bg-slate-950/40 text-slate-600 line-through"
+                      }`}
+                    >
+                      <span className={`h-1.5 w-1.5 rounded-full ${colorClass}`} />
+                      {label}
+                    </button>
+                  ))}
+                </div>
+                <p className="mt-2 text-[10px] leading-4 text-slate-500">
+                  {copy.graphLegend}
+                </p>
+              </details>
             </div>
 
             <div className="absolute right-4 top-4 z-10 flex items-center gap-2 rounded-lg border border-slate-700/80 bg-slate-900/90 p-2 backdrop-blur">
               <span className="px-1 text-xs font-semibold text-slate-400">
-                {selectedNodeIds.length} selected
+                {selectedNodeIds.length} {copy.selected}
               </span>
               <button
                 type="button"
@@ -2091,7 +3394,7 @@ export default function App() {
                 disabled={selectedNodeIds.length < 2}
                 className="rounded-md bg-cyan-400 px-3 py-1.5 text-xs font-extrabold text-slate-950 transition hover:bg-cyan-300 disabled:cursor-not-allowed disabled:opacity-40"
               >
-                Group
+                {copy.group}
               </button>
             </div>
 
@@ -2106,6 +3409,7 @@ export default function App() {
               onEdgesChange={handleEdgesChange}
               onConnect={handleConnect}
               onNodeClick={handleNodeClick}
+              onEdgeClick={handleEdgeClick}
               onPaneClick={handlePaneClick}
               onSelectionChange={handleSelectionChange}
               selectionOnDrag
@@ -2139,20 +3443,20 @@ export default function App() {
           <aside className="flex min-h-0 flex-col border-l border-slate-800 bg-[#0F172A]">
             <div className="border-b border-slate-800 p-4">
               <p className="text-[10px] font-extrabold uppercase tracking-[0.18em] text-yellow-400">
-                Socratic Co-Pilot
+                {copy.socraticCopilot}
               </p>
               <label className="mt-3 block">
-                <span className="text-[10px] font-extrabold uppercase tracking-[0.16em] text-slate-500">
-                  Response language
+                <span className="text-[10px] font-extrabold uppercase tracking-[0.16em] text-slate-600">
+                  {copy.languageSetInIngestion}
                 </span>
                 <select
                   value={targetLang}
                   onChange={(event) => setTargetLang(event.target.value)}
-                  className="mt-1.5 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm font-semibold text-slate-200 outline-none transition focus:border-cyan-400 focus:ring-2 focus:ring-cyan-400/20"
+                  className="mt-1 w-full rounded-md border border-slate-800 bg-slate-950 px-2 py-1.5 text-xs font-semibold text-slate-300 outline-none transition focus:border-cyan-400 focus:ring-2 focus:ring-cyan-400/20"
                 >
-                  <option value="auto">Auto</option>
-                  <option value="en">English</option>
-                  <option value="uk">Українська</option>
+                  <option value="auto">{copy.auto}</option>
+                  <option value="en">{copy.english}</option>
+                  <option value="uk">{copy.ukrainian}</option>
                 </select>
               </label>
               <button
@@ -2161,7 +3465,7 @@ export default function App() {
                 disabled={isReviewing}
                 className="mt-3 w-full rounded-xl bg-yellow-400 px-4 py-3 text-sm font-extrabold text-slate-950 transition hover:bg-yellow-300 disabled:cursor-not-allowed disabled:opacity-60"
               >
-                {isReviewing ? "Co-Pilot thinking..." : "Запустити Context Co-Pilot"}
+                {isReviewing ? copy.copilotThinking : copy.runCopilot}
               </button>
               <div className="mt-3 grid grid-cols-2 gap-2">
                 <button
@@ -2169,35 +3473,44 @@ export default function App() {
                   onClick={applyMagicLayout}
                   className="rounded-lg border border-cyan-400/60 bg-cyan-400/10 px-3 py-2.5 text-xs font-extrabold text-cyan-300 transition hover:bg-cyan-400 hover:text-slate-950"
                 >
-                  ⚡ Magic Layout
+                  {copy.magicLayout}
                 </button>
                 <button
                   type="button"
                   onClick={generateMarkdownReport}
                   className="rounded-lg border border-violet-400/60 bg-violet-400/10 px-3 py-2.5 text-xs font-extrabold text-violet-300 transition hover:bg-violet-400 hover:text-slate-950"
                 >
-                  📥 Download Report
+                  {copy.downloadReport}
                 </button>
               </div>
               <button
                 type="button"
                 onClick={handleDiscoverConnections}
-                disabled={isDiscoveringConnections || !activeTopicId}
+                disabled={
+                  isDiscoveringConnections ||
+                  !activeTopicId ||
+                  (activeTopic?.finding_count || 0) < 2
+                }
                 className="mt-2 w-full rounded-lg border border-fuchsia-400/60 bg-fuchsia-400/10 px-3 py-2.5 text-xs font-extrabold text-fuchsia-200 transition hover:bg-fuchsia-400 hover:text-slate-950 disabled:cursor-not-allowed disabled:opacity-40"
               >
                 {isDiscoveringConnections
-                  ? "Discovering evidence links..."
-                  : "✦ Discover Connections"}
+                  ? copy.discovering
+                  : copy.discoverConnections}
               </button>
+              {activeTopic && activeTopic.finding_count < 2 && (
+                <p className="mt-2 text-xs leading-5 text-slate-500">
+                  {copy.mergeMore(2 - activeTopic.finding_count)}
+                </p>
+              )}
             </div>
 
             <div className="min-h-0 flex-1 overflow-y-auto p-4">
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <p className="text-[10px] font-extrabold uppercase tracking-[0.18em] text-cyan-400">
-                    Inspector
+                    {copy.inspector}
                   </p>
-                  <h2 className="mt-1 font-bold text-white">Context Git State</h2>
+                  <h2 className="mt-1 font-bold text-white">{copy.contextGitState}</h2>
                 </div>
                 {selectedItem && (
                   <span
@@ -2206,14 +3519,26 @@ export default function App() {
                         ? "bg-yellow-400/15 text-yellow-300"
                         : selectedItem.kind === "proposal"
                           ? "bg-orange-400/15 text-orange-300"
+                          : selectedItem.kind === "relation" &&
+                              selectedItem.item.status === "candidate"
+                            ? "bg-yellow-400/15 text-yellow-200"
+                            : selectedItem.kind === "relation" &&
+                                selectedItem.item.status === "hypothesis"
+                              ? "bg-violet-400/15 text-violet-200"
                           : "bg-emerald-400/15 text-emerald-300"
                     }`}
                   >
                     {selectedItem.kind === "draft"
-                      ? "DRAFT"
+                      ? copy.draft
                       : selectedItem.kind === "proposal"
-                        ? "INBOX"
-                        : "VERIFIED"}
+                        ? copy.inbox
+                        : selectedItem.kind === "relation"
+                          ? selectedItem.item.status === "candidate"
+                            ? copy.pendingLink
+                            : selectedItem.item.status === "hypothesis"
+                              ? copy.hypothesis
+                              : copy.relation
+                        : copy.verified}
                   </span>
                 )}
               </div>
@@ -2228,7 +3553,7 @@ export default function App() {
                       : "text-slate-400 hover:text-slate-200"
                   }`}
                 >
-                  State
+                  {copy.state}
                 </button>
                 <button
                   type="button"
@@ -2239,7 +3564,7 @@ export default function App() {
                       : "text-slate-400 hover:text-slate-200"
                   }`}
                 >
-                  History
+                  {copy.history}
                 </button>
               </div>
 
@@ -2248,20 +3573,20 @@ export default function App() {
                   <div className="flex items-start justify-between gap-3">
                     <div>
                       <h3 className="text-[10px] font-extrabold uppercase tracking-[0.16em] text-cyan-300">
-                        Workspace Snapshots
+                        {copy.snapshots}
                       </h3>
                       <p className="mt-1 text-xs text-slate-500">
-                        Restore a previous verified Context Git state.
+                        {copy.restoreDescription}
                       </p>
                     </div>
                     <span className="rounded-full bg-cyan-400/10 px-2 py-1 text-[10px] font-bold text-cyan-300">
-                      {historyEntries.length} revisions
+                      {historyEntries.length} {copy.revisions}
                     </span>
                   </div>
 
                   {historyEntries.length === 0 ? (
                     <p className="mt-4 text-sm text-slate-500">
-                      Перший snapshot з’явиться після аналізу, Merge або зміни зв’язку.
+                      {copy.firstSnapshot}
                     </p>
                   ) : (
                     <ol className="mt-4 space-y-3 border-l border-cyan-500/30 pl-4">
@@ -2276,7 +3601,7 @@ export default function App() {
                               </span>
                             </div>
                             <p className="mt-1 text-xs text-slate-500">
-                              {entry.timestamp || "timestamp unavailable"}
+                              {entry.timestamp || copy.timestampUnavailable}
                             </p>
                             <button
                               type="button"
@@ -2284,7 +3609,7 @@ export default function App() {
                               disabled={isCheckingOut}
                               className="mt-3 rounded-md border border-cyan-400/50 bg-cyan-400/10 px-2.5 py-1.5 text-xs font-bold text-cyan-200 transition hover:bg-cyan-400 hover:text-slate-950 disabled:cursor-not-allowed disabled:opacity-50"
                             >
-                              {isCheckingOut ? "Restoring..." : `Restore r${entry.revision}`}
+                              {isCheckingOut ? copy.restoring : copy.restore(entry.revision)}
                             </button>
                           </div>
                         </li>
@@ -2300,19 +3625,51 @@ export default function App() {
                 <div className="mt-4 space-y-4">
                   <section className="rounded-xl border border-slate-700 bg-slate-950/55 p-3">
                     <h3 className="text-[10px] font-extrabold uppercase tracking-[0.16em] text-slate-400">
-                      Pydantic State · Raw JSON
+                      {copy.rawState}
                     </h3>
                     <pre className="mt-3 max-h-56 overflow-auto whitespace-pre-wrap break-words text-xs leading-5 text-cyan-100">
                       {JSON.stringify(inspectorState, null, 2)}
                     </pre>
                   </section>
 
+                  {selectedItem.kind === "relation" && (
+                    <section className="rounded-xl border border-slate-700 bg-slate-950/55 p-3">
+                      <h3 className="text-[10px] font-extrabold uppercase tracking-[0.16em] text-slate-400">
+                        {copy.relationPath}
+                      </h3>
+                      <div className="mt-3 rounded-lg border border-slate-800 bg-slate-900/70 p-3">
+                        <p className="text-sm font-bold text-slate-100">
+                          {selectedItem.item.source_title}
+                        </p>
+                        <p className="my-2 text-center text-xs font-extrabold uppercase tracking-[0.16em] text-cyan-300">
+                          {formatRelationType(selectedItem.item.type, uiLanguage)} →
+                        </p>
+                        <p className="text-sm font-bold text-slate-100">
+                          {selectedItem.item.target_title}
+                        </p>
+                      </div>
+                      <div className="mt-3 flex flex-wrap gap-2 text-[10px] font-bold uppercase tracking-wide">
+                        <span className="rounded-full border border-slate-700 bg-slate-900 px-2 py-1 text-slate-300">
+                          {formatRelationStatus(selectedItem.item.origin || "ai", uiLanguage)}
+                        </span>
+                        <span className="rounded-full border border-slate-700 bg-slate-900 px-2 py-1 text-slate-300">
+                          {formatRelationStatus(selectedItem.item.status || "verified", uiLanguage)}
+                        </span>
+                        <span className="rounded-full border border-slate-700 bg-slate-900 px-2 py-1 text-slate-300">
+                          {selectedItem.item.confidence_score ?? copy.unscored} {copy.confidence.toLowerCase()}
+                        </span>
+                      </div>
+                    </section>
+                  )}
+
                   <section className="rounded-xl border border-cyan-500/30 bg-cyan-400/5 p-3">
                     <h3 className="text-[10px] font-extrabold uppercase tracking-[0.16em] text-cyan-300">
-                      Source Evidence · Strict Evidence Mapping
+                      {selectedItem.kind === "relation"
+                        ? copy.relationEvidence
+                        : copy.sourceEvidence}
                     </h3>
                     {selectedEvidence.length === 0 ? (
-                      <p className="mt-3 text-sm text-slate-500">Докази відсутні.</p>
+                      <p className="mt-3 text-sm text-slate-500">{copy.noEvidence}</p>
                     ) : (
                       <div className="mt-3 space-y-3">
                         {selectedEvidence.map((evidence, index) => (
@@ -2331,10 +3688,10 @@ export default function App() {
                             {(evidence.page_number || evidence.start_char !== undefined) && (
                               <p className="mt-2 text-[10px] font-semibold uppercase tracking-wide text-cyan-300/80">
                                 {evidence.page_number
-                                  ? `Page ${evidence.page_number}`
-                                  : "Text source"}
+                                  ? `${copy.page} ${evidence.page_number}`
+                                  : copy.textSource}
                                 {evidence.start_char !== undefined
-                                  ? ` · char ${evidence.start_char}`
+                                  ? ` · ${copy.character} ${evidence.start_char}`
                                   : ""}
                               </p>
                             )}
@@ -2344,9 +3701,79 @@ export default function App() {
                     )}
                   </section>
 
+                  {pendingRelationReviews.length > 0 && (
+                    <section className="rounded-xl border border-dashed border-yellow-400/70 bg-yellow-400/5 p-3">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <h3 className="text-[10px] font-extrabold uppercase tracking-[0.16em] text-yellow-300">
+                            {copy.firewallReview}
+                          </h3>
+                          <p className="mt-1 text-xs leading-5 text-slate-400">
+                            {copy.aiSuggestion}
+                          </p>
+                        </div>
+                        <span className="shrink-0 rounded-full bg-yellow-400/15 px-2 py-1 text-[10px] font-extrabold text-yellow-200">
+                          {pendingRelationReviews.length} {copy.pending}
+                        </span>
+                      </div>
+
+                      <div className="mt-3 space-y-3">
+                        {pendingRelationReviews.map((relation) => {
+                          const isReviewingRelation = reviewingRelationId === relation.id;
+
+                          return (
+                            <article
+                              key={relation.id || `${relation.target_id}-${relation.type}`}
+                              className="rounded-lg border border-yellow-400/25 bg-slate-950/55 p-3"
+                            >
+                              <p className="text-sm font-bold text-yellow-100">
+                                {formatRelationType(relation.type, uiLanguage)} → {relation.targetTitle}
+                              </p>
+                              <p className="mt-1 text-xs text-slate-400">
+                                {copy.confidence}: {relation.confidence_score ?? copy.notScored}
+                              </p>
+                              {relation.reason && (
+                                <p className="mt-2 text-sm leading-5 text-slate-300">
+                                  {relation.reason}
+                                </p>
+                              )}
+                              {relation.evidence && (
+                                <blockquote className="mt-2 border-l-2 border-yellow-400 pl-3 text-sm italic leading-5 text-yellow-50/90">
+                                  “{relation.evidence}”
+                                </blockquote>
+                              )}
+                              <div className="mt-3 flex flex-wrap gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    handleApproveRelation(relation.sourceFindingId, relation.id)
+                                  }
+                                  disabled={isReviewingRelation || !relation.id}
+                                  className="rounded-md bg-emerald-400 px-3 py-1.5 text-xs font-extrabold text-slate-950 transition hover:bg-emerald-300 disabled:cursor-not-allowed disabled:opacity-50"
+                                >
+                                  {isReviewingRelation ? copy.saving : copy.approveEvidence}
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    handleRejectRelation(relation.sourceFindingId, relation.id)
+                                  }
+                                  disabled={isReviewingRelation || !relation.id}
+                                  className="rounded-md border border-rose-400/60 px-3 py-1.5 text-xs font-bold text-rose-200 transition hover:bg-rose-400 hover:text-slate-950 disabled:cursor-not-allowed disabled:opacity-50"
+                                >
+                                  {copy.rejectLink}
+                                </button>
+                              </div>
+                            </article>
+                          );
+                        })}
+                      </div>
+                    </section>
+                  )}
+
                   <section className="rounded-xl border border-violet-500/30 bg-violet-400/5 p-3">
                     <h3 className="text-[10px] font-extrabold uppercase tracking-[0.16em] text-violet-300">
-                      AI Reasoning
+                      {copy.aiReasoning}
                     </h3>
                     <p className="mt-3 whitespace-pre-wrap text-sm leading-6 text-slate-200">
                       {inspectorReasoning}
@@ -2356,7 +3783,7 @@ export default function App() {
                       <>
                         <div className="mt-4 border-t border-violet-400/20 pt-3">
                           <p className="text-[10px] font-extrabold uppercase tracking-[0.16em] text-violet-300">
-                            Socratic Questions
+                            {copy.socraticQuestions}
                           </p>
                           <ol className="mt-2 space-y-2 text-sm leading-5 text-slate-300">
                             {selectedItem.item.socratic_questions.map((question, index) => (
@@ -2369,7 +3796,7 @@ export default function App() {
                         </div>
                         <div className="mt-4 rounded-lg border border-yellow-500/30 bg-slate-950/45 p-3">
                           <p className="text-[10px] font-extrabold uppercase tracking-[0.16em] text-yellow-300">
-                            Proposed Hypothesis · {selectedItem.item.proposed_hypothesis.confidence_score}% confidence
+                            {copy.proposedHypothesis} · {selectedItem.item.proposed_hypothesis.confidence_score}% {copy.confidence.toLowerCase()}
                           </p>
                           <p className="mt-2 font-semibold text-slate-100">
                             {selectedItem.item.proposed_hypothesis.title}
@@ -2388,6 +3815,7 @@ export default function App() {
         </div>
       </div>
       <IngestResearchModal
+        copy={copy}
         isOpen={isIngestModalOpen}
         ingestMode={ingestMode}
         activeTopicTitle={activeTopic?.title}
@@ -2399,6 +3827,17 @@ export default function App() {
         setSourceTitle={setSourceTitle}
         sourcePageCount={sourcePageCount}
         setSourcePageCount={setSourcePageCount}
+        sourcePolicy={sourcePolicy}
+        setSourcePolicy={setSourcePolicy}
+        targetLang={targetLang}
+        setTargetLang={setTargetLang}
+        apiKey={apiKey}
+        setApiKey={setApiKey}
+        isOpenAiConfigured={isOpenAiConfigured}
+        error={error}
+        notice={notice}
+        isResettingWorkspace={isResettingWorkspace}
+        onStartFreshWorkspace={handleStartFreshWorkspace}
         isExtractingSource={isExtractingSource}
         onExtractFile={handleSourceExtraction}
         isAnalyzing={isAnalyzing}
