@@ -1,110 +1,119 @@
-# Flow-AI: Spatial Research IDE & Evidence-Grounded Research
+# Flow-AI Research IDE
 
-**Track:** Developer Tools  
-**Hackathon:** OpenAI Build Week (Codex & GPT-5.6)
+> An evidence-grounded spatial research workspace for turning papers, notes, and datasets into a traceable knowledge graph.
 
-Flow-AI turns research sources into an evidence-grounded spatial knowledge graph. It gives a researcher one canvas for extracting facts, seeing relationships, challenging assumptions, and preserving meaningful research revisions.
+**Hackathon track:** Developer Tools
+**Product:** Flow-AI Research IDE
+**Core idea:** Context Git — every AI-generated claim stays connected to its source evidence, human decisions, graph relationships, and recoverable workspace revisions.
 
-## The problem
+## The pitch
 
-Long research chats and static tables make it difficult to see how claims relate, which source supports each claim, and where a line of reasoning is weak. Valuable evidence becomes buried in a conversation instead of becoming reusable research structure.
+Research tools usually force people to choose between a long chat, a spreadsheet, or a static note. None of those formats makes it easy to answer four questions at the same time:
 
-## The solution
+1. What claims did the AI extract?
+2. Which exact source passage supports each claim?
+3. How do the verified claims relate to one another?
+4. What changed in the research workspace over time?
 
-Flow-AI is a local-first Spatial Research IDE built around **Context Git**:
+Flow-AI provides one local-first canvas for that workflow. It separates unverified AI proposals from human-approved findings, maps every finding back to evidence, discovers reviewable relationships, and keeps the graph state versioned.
 
-- ingest a paper, note, dataset, or document into a dedicated research topic;
-- turn only evidence-backed claims into AI proposals;
-- promote human-approved proposals into verified Fact Nodes;
-- visualize topic trails, reviewable AI relation candidates, verified links, and manual hypotheses on one React Flow canvas;
-- use a targeted Socratic Co-Pilot to review a selected fact and create a visible review branch;
-- restore earlier research and canvas states with Time Travel.
+## What the demo shows
 
-The selected response language also localizes the interface. **Auto** follows the language of the imported source document; explicit English or Ukrainian selection applies to the UI, AI findings, Socratic review, and relation labels.
+- **Spotlight Ingestion:** import PDF, DOCX, TXT, Markdown, CSV, TSV, JSON, or LOG sources.
+- **Evidence-backed proposals:** the AI returns findings only when their quotations can be mapped back to the submitted source.
+- **AI Inbox:** inspect proposals, confidence scores, details, and exact evidence before merging.
+- **Verified Workspace:** promote approved proposals into Fact Nodes on a React Flow canvas.
+- **Relation Firewall:** score a new source against the active research topic and isolate unrelated material instead of forcing connections.
+- **Connection discovery:** generate evidence-grounded relationship candidates, then approve or reject them as a researcher.
+- **Manual graph editing:** connect facts directly; cross-topic manual links are labelled as hypotheses rather than verified AI evidence.
+- **Socratic Co-Pilot:** select a fact, inspect its logical gap and questions, then resolve or dismiss the resulting review draft.
+- **Context Layers:** group related facts into visual layers without losing their persisted absolute positions.
+- **Smart layouts:** switch between Graph, Tree, Timeline, and Comparison, or use Magic Layout.
+- **Time Travel:** restore findings, relationships, node positions, context layers, manual edges, and layout mode from a previous revision.
+- **Localized experience:** Auto follows the imported source language; explicit English or Ukrainian selection applies to the UI and AI output.
+- **Cyber Report:** download verified findings and their evidence as Markdown.
 
-The Spotlight Ingestion modal accepts a session-only OpenAI key. It is sent only to the local AI request at `localhost:8000`, is never written to disk or browser storage, and disappears when the page is reloaded. A manually created `backend/.env` key remains an optional local fallback.
+## Why it is useful
 
-## Core capabilities
-
-### Strict Evidence Mapping
-
-Every finding must contain a source-grounded quotation. The backend stores the exact fragment from the submitted document, including its character offsets and PDF page number. It tolerates only presentation differences introduced by PDF extraction or the model—line wrapping, whitespace, typographic quotes, and dash variants—while rejecting unsupported semantic rewrites.
-
-### Multi-topic research canvas
-
-Each research question creates a Root Node. Add multiple papers or notes to the same topic, or create several topics on the same canvas. Before a new source can affect an existing topic, **Relation Firewall** asks the model for a Topic Fit score and verdict. For an added source, choose a policy: Smart Firewall, isolate uncertain sources, or import facts without AI links. An unrelated source is always quarantined into its own topic. The Inbox is filtered by the active topic while the graph preserves the wider research picture. Delete Topic removes that topic’s sources, proposals, facts, links, and canvas records; an earlier revision remains recoverable from History.
-
-### Knowledge graph connections
-
-- automatic Root Node → Fact Node evidence trails;
-- AI-discovered, evidence-backed relationships through **Discover Connections**, initially shown as yellow review candidates;
-- human approval or rejection for every AI relation candidate in the selected Fact’s Inspector;
-- persistent manual Fact → Fact connections in Manual mode; manual links between separate topics are explicitly labelled **Cross-topic hypothesis**, never as evidence-verified AI claims;
-- visible animated review edges from Socratic Drafts to the fact under review;
-- Context Layers for grouping related facts.
-
-Click any relationship edge to open its **Relation Inspector**: source and target facts, status, origin, confidence, exact evidence, and rationale are visible in one place. The Graph Filters panel can focus the active topic, search findings, filter by source or confidence, and toggle evidence trails, reviewed links, candidates, manual hypotheses, and Socratic review branches.
-
-### Socratic Co-Pilot
-
-Select a Fact Node and run the Co-Pilot. It acts as a critical evidence reviewer for that specific fact: logic, hidden assumptions, evidence quality, and missing context. The result appears as a Socratic Review Draft that can be **Resolve & Merge**d or dismissed.
-
-### Smart layouts and Time Travel
-
-The backend suggests one of four structures from the source: **Graph**, **Tree**, **Timeline**, or **Comparison**. Magic Layout places the nodes deterministically for that structure. Every meaningful backend change creates a revision. Restoring a revision brings back findings, relationships, absolute node positions, Context Layers, local manual edges, and layout mode. Local state uses an atomic write with a backup file, so an interrupted write does not silently reset a workspace.
-
-### Source ingestion and reporting
-
-The Spotlight Ingestion modal accepts **PDF, DOCX, TXT, Markdown, CSV, TSV, JSON, and LOG**. PDF text is extracted page-by-page for evidence mapping, while DOCX is extracted locally by the backend. Use **Download Report** to export verified findings and their evidence as Markdown.
+Flow-AI is designed for research where provenance matters. The graph is not just a visual decoration: it is a working map of claims, evidence, confidence, relationships, review decisions, and revisions. The researcher remains in control of what becomes an official finding and what becomes a durable relationship.
 
 ## Architecture
 
+```mermaid
+flowchart LR
+    A[Spotlight Ingestion] --> B[FastAPI source extraction]
+    B --> C[OpenAI structured analysis]
+    C --> D[AI Inbox proposals]
+    D --> E[Human merge]
+    E --> F[Verified Fact Nodes]
+    F --> G[Relation Firewall and connection discovery]
+    G --> H[React Flow canvas]
+    H --> I[UI state snapshots and Time Travel]
+```
+
 | Layer | Technology | Responsibility |
 |---|---|---|
-| Client | React 19, Vite, Tailwind CSS, `@xyflow/react` | Spatial graph, Inspector, Ingestion, layouts, local canvas state |
-| API | FastAPI, Pydantic | Research workflow, strict evidence validation, workspace revisions, file extraction |
-| Model | `gpt-5.6-luna` with `reasoning_effort="low"` | Fact proposals, layout suggestions, relationship discovery, targeted evidence review |
-| Persistence | Local `workspace_state.json` | Findings, topics, sources, graph relationships, history snapshots |
+| Client | React 19, Vite 8, Tailwind CSS 3.4 | SPA shell, ingestion modal, graph UI, Inspector, localization |
+| Graph | `@xyflow/react` 12 | Fact Nodes, Draft Nodes, Context Layers, handles, edges, minimap, controls |
+| API | FastAPI, Uvicorn, Pydantic | Research workflow, validation, evidence mapping, relations, snapshots |
+| AI | OpenAI Python SDK, configured model `gpt-5.6-luna` | Findings, layout suggestion, topic fit, relation candidates, Socratic review |
+| Extraction | `pypdf`, `python-docx`, `python-multipart` | PDF/DOCX/text file ingestion and page-aware source extraction |
+| Persistence | Local `workspace_state.json` | Topics, sources, proposals, findings, relations, UI state, history |
 
-Codex was used as the implementation partner for the React Flow interaction model, FastAPI/Pydantic contracts, layout behavior, and verification workflow.
+The client is a pure Vite React SPA. There is no Next.js, no server component layer, and no frontend API proxy. Requests go directly to `http://localhost:8000`.
 
-## Setup for judges
+## Requirements
 
-### Prerequisites
+- Windows PowerShell for the one-command launcher.
+- Node.js **20.19+** or **22.12+**.
+- Python **3.10+**.
+- An OpenAI API key with access to the model configured in `backend/main.py` (`gpt-5.6-luna`).
 
-- Node.js **20.19+** or **22.12+**
-- Python 3.10+
-- An OpenAI API key with access to `gpt-5.6-luna`
+## Start the project
 
-### 1. One-command startup (recommended)
+### Recommended: one command on Windows
 
-From the project root, run this single command.
+Run this from the repository root:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\start-flow-ai.ps1
 ```
 
-The script creates `backend\venv` when needed, installs missing dependencies, starts FastAPI first, waits for port `8000`, then starts Vite on port `5173` and opens the browser. Press `Ctrl+C` in the same terminal to stop both services. Use `-NoBrowser` to skip opening a tab or `-SkipInstall` to fail fast instead of installing missing dependencies. Each run writes backend and frontend logs to `.flow-ai-logs\`.
+The launcher:
 
-The backend starts without a key so source extraction remains available. Paste a session-only OpenAI key into Spotlight Ingestion before AI analysis, or create `backend/.env` for an optional local fallback. The `.env` file is ignored by Git.
+1. checks `backend` and `frontend`;
+2. creates `backend\venv` if it does not exist;
+3. installs missing backend dependencies from `backend\requirements.txt`;
+4. installs frontend dependencies when `frontend\node_modules` is missing;
+5. starts FastAPI on `http://localhost:8000`;
+6. waits until port `8000` is reachable;
+7. starts Vite on `http://localhost:5173`;
+8. opens the browser and keeps both services alive until `Ctrl+C`.
 
-```env
-OPENAI_API_KEY=your_openai_api_key
+Useful options:
+
+```powershell
+.\start-flow-ai.ps1 -NoBrowser
+.\start-flow-ai.ps1 -SkipInstall
 ```
 
-### 2. Manual startup (optional)
+Runtime logs are written to `.flow-ai-logs\`, which is ignored by Git.
 
-If you need separate terminals or live service output, start the backend first:
+### Manual startup
+
+Use this when you need separate terminals or visible service output.
+
+Backend terminal:
 
 ```powershell
 cd backend
 python -m venv venv
 .\venv\Scripts\Activate.ps1
-pip install -r requirements.txt
-uvicorn main:app --reload --port 8000
+python -m pip install -r requirements.txt
+python -m uvicorn main:app --reload --port 8000
 ```
 
-Then open a second terminal for the frontend:
+Frontend terminal:
 
 ```powershell
 cd frontend
@@ -112,41 +121,115 @@ npm install
 npm run dev
 ```
 
-Open `http://localhost:5173`.
+Open `http://localhost:5173` after both processes are running.
 
-## Demo flow
+### macOS/Linux manual startup
 
-1. Press `Ctrl+K` / `Cmd+K`, click the Flow-AI logo, or select **+ New topic**.
-2. Choose the response language in Spotlight Ingestion, paste an OpenAI key into the session-only connection field, then enter an Active Query and paste research text or import a PDF, DOCX, TXT, MD, CSV, TSV, JSON, or LOG file.
-3. Click **Analyze Research**. Flow-AI creates a topic and evidence-backed proposals.
-4. Inspect a proposal in the AI Inbox, then choose **Merge to Workspace** to create a verified Fact Node.
-5. Use **+ Add paper** on the topic root to add a second source and expand the same research question.
-6. Merge at least two proposals in a topic, then press **Discover Connections** to ask the AI for evidence-grounded links between verified facts. Select the source Fact and approve or reject each yellow relation candidate in Inspector. Switch to **Manual** to draw your own Fact → Fact links; cross-topic links remain labelled hypotheses. **Review** runs the Socratic Co-Pilot, and **Magic** applies the active layout.
-7. Click a graph edge to inspect its source, target, status, rationale, confidence, and exact evidence. Use Graph Filters to focus the active topic or simplify the graph.
-8. Click a Fact Node, then run **Context Co-Pilot**. Inspect the yellow review edge and choose **Resolve & Merge** or **Dismiss Review** on the Socratic Review Draft.
-9. Group related nodes into a Context Layer. Try Graph, Tree, Timeline, Comparison, and **Magic Layout**.
-10. Open Inspector → History and restore a revision to demonstrate Time Travel.
-11. Use **Download Report** to export the verified findings as Markdown.
+Backend:
 
-Use **Start fresh workspace** in Spotlight Ingestion when you want to discard old test topics, findings, graph links, and Time Travel history before a clean demo run.
+```bash
+cd backend
+python3 -m venv venv
+source venv/bin/activate
+python -m pip install -r requirements.txt
+python -m uvicorn main:app --reload --port 8000
+```
 
-## Local constraints
-
-- The file extraction endpoint accepts files up to 12 MB.
-- PDF extraction uses the embedded text layer. Scanned image-only PDFs need OCR before ingestion.
-- Workspace data is local to the backend process through `workspace_state.json`.
-
-## Verification
-
-The project is checked with:
+Frontend:
 
 ```bash
 cd frontend
-npm run build
-npm run lint
+npm install
+npm run dev
 ```
 
-```bash
+## OpenAI key and local security
+
+The application can start without a key so local file extraction remains available.
+
+For AI analysis, use either:
+
+1. the session-only key field in Spotlight Ingestion; or
+2. an optional `backend/.env` file:
+
+```env
+OPENAI_API_KEY=your_openai_api_key
+```
+
+Session keys are sent only to the local FastAPI request, are not stored in `localStorage`, and disappear after the browser session. `backend/.env` is ignored by Git. Never commit a real API key.
+
+## Demo flow for judges
+
+1. Start the project with `start-flow-ai.ps1`.
+2. If old test data is present, open Spotlight Ingestion and choose **Start fresh workspace**.
+3. Select **Auto**, **English**, or **Ukrainian** response language.
+4. Paste a session key if `backend/.env` is not configured.
+5. Enter an Active Query and import a source file or paste source text.
+6. Click **Analyze Research**. A topic root and evidence-backed AI proposals appear.
+7. Select a proposal in **AI Inbox**, inspect its evidence, and click **Merge to Workspace**.
+8. Add another paper to the same topic to demonstrate multi-source research.
+9. Merge at least two facts, then click **Discover Connections**. Review the yellow candidates in Inspector and approve or reject them.
+10. Switch to **Manual** to draw a direct Fact → Fact link.
+11. Select a Fact Node and run **Context Co-Pilot**. Review the identified gap, questions, evidence, and proposed hypothesis; resolve and merge or dismiss the draft.
+12. Try **Graph**, **Tree**, **Timeline**, **Comparison**, and **Magic Layout**.
+13. Group facts into a Context Layer, then inspect **History** and restore a previous revision.
+14. Click **Download Report** to export verified findings and source evidence as Markdown.
+
+## API surface
+
+The frontend talks directly to these FastAPI routes:
+
+| Route | Purpose |
+|---|---|
+| `GET /api/workspace` | Load topics, sources, proposals, findings, UI state, and history |
+| `GET /api/config/openai` | Check whether a backend key is configured |
+| `POST /api/sources/extract` | Extract text and page metadata from an uploaded source |
+| `POST /api/research` | Analyze a source and create proposals/topic data |
+| `POST /api/proposals/{id}/commit` | Merge one proposal into verified findings |
+| `POST /api/topics/{id}/relations/discover` | Generate evidence-grounded relation candidates |
+| `POST /api/findings/{id}/relations` | Create a manual relationship |
+| `POST /api/findings/{id}/relations/{relation_id}/approve` | Approve an AI relation candidate |
+| `DELETE /api/findings/{id}/relations/{relation_id}` | Reject or remove a relation |
+| `POST /api/socratic/review` | Generate a targeted Socratic review draft |
+| `POST /api/socratic/commit` | Merge a reviewed hypothesis as a finding |
+| `PUT /api/workspace/ui-state` | Persist positions, layers, manual edges, and layout |
+| `POST /api/workspace/checkout/{revision}` | Restore a workspace revision |
+| `POST /api/workspace/reset` | Clear the local workspace for a clean demo |
+
+Important request fields include `target_lang`, `fact_id`, `fact_text`, `source_policy`, and `suggested_layout`. The backend validates evidence quotes before a proposal or hypothesis can be committed.
+
+## Source formats and constraints
+
+- Supported files: PDF, DOCX, TXT, Markdown, CSV, TSV, JSON, and LOG.
+- Maximum upload size: 12 MB.
+- PDF extraction uses the embedded text layer and preserves page information.
+- Scanned image-only PDFs require OCR before import.
+- Workspace persistence is local to the backend process in `workspace_state.json` with an atomic backup write.
+- This is a local-first hackathon MVP, not a multi-user hosted service.
+
+## Verification
+
+Frontend checks:
+
+```powershell
+cd frontend
+npm run lint
+npm run build
+```
+
+Backend checks:
+
+```powershell
 python -m py_compile backend/main.py
 python -m unittest discover -s backend/tests -p "test_*.py" -v
 ```
+
+The backend tests cover the frontend/API contract, source extraction, target language prompts, confidence scores, relation approval/rejection, Socratic review, topic isolation, UI state persistence, and Time Travel restoration.
+
+## Current scope
+
+Flow-AI is intentionally local-first for the hackathon. Authentication, hosted multi-user persistence, OCR, production observability, and asynchronous job queues are outside the current MVP scope. The architecture keeps those future additions isolated behind the FastAPI boundary.
+
+## License
+
+See [LICENSE](LICENSE).
