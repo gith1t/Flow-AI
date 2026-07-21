@@ -2,6 +2,7 @@ import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from "
 import {
   addEdge,
   Background,
+  ConnectionMode,
   Controls,
   Handle,
   MarkerType,
@@ -643,7 +644,7 @@ const formatRelationSupport = (support, copy) => {
   return copy.insufficientSupport;
 };
 
-const FactNode = memo(function FactNode({ data, selected }) {
+const FactNode = memo(function FactNode({ data, selected, isConnectable }) {
   const rawConfidenceScore = data.finding.confidence_score;
   const confidenceScore = Number(rawConfidenceScore);
   const hasConfidenceScore =
@@ -657,6 +658,7 @@ const FactNode = memo(function FactNode({ data, selected }) {
     rawRelevanceScore !== undefined &&
     Number.isFinite(relevanceScore);
   const evidenceAudit = data.finding.quality_audit;
+  const canConnect = data.canConnect !== false && isConnectable !== false;
 
   return (
     <div
@@ -671,7 +673,9 @@ const FactNode = memo(function FactNode({ data, selected }) {
       <Handle
         type="target"
         position={Position.Top}
-        className="!h-2.5 !w-2.5 !border-2 !border-slate-950 !bg-cyan-400"
+        isConnectable={canConnect}
+        title="Connect a fact here"
+        className="!h-3 !w-3 !border-2 !border-slate-950 !bg-cyan-300"
       />
       <div className="mb-2 flex items-center justify-between gap-3">
         <span className="text-[10px] font-extrabold uppercase tracking-[0.16em] text-emerald-300">
@@ -719,7 +723,9 @@ const FactNode = memo(function FactNode({ data, selected }) {
       <Handle
         type="source"
         position={Position.Bottom}
-        className="!h-2.5 !w-2.5 !border-2 !border-slate-950 !bg-emerald-400"
+        isConnectable={canConnect}
+        title="Start a connection from this fact"
+        className="!h-3 !w-3 !border-2 !border-slate-950 !bg-emerald-300"
       />
     </div>
   );
@@ -746,6 +752,7 @@ const DraftNode = memo(function DraftNode({ data, selected }) {
       <Handle
         type="target"
         position={Position.Top}
+        isConnectable={false}
         className="!h-2.5 !w-2.5 !border-2 !border-slate-950 !bg-yellow-400"
       />
       <div className="flex items-start justify-between gap-3">
@@ -797,6 +804,7 @@ const DraftNode = memo(function DraftNode({ data, selected }) {
       <Handle
         type="source"
         position={Position.Bottom}
+        isConnectable={false}
         className="!h-2.5 !w-2.5 !border-2 !border-slate-950 !bg-yellow-400"
       />
     </div>
@@ -844,6 +852,7 @@ const RootNode = memo(function RootNode({ data, selected }) {
       <Handle
         type="target"
         position={Position.Top}
+        isConnectable={false}
         className="!h-2.5 !w-2.5 !border-2 !border-slate-950 !bg-cyan-400"
       />
       <div className="flex items-start justify-between gap-3">
@@ -880,6 +889,7 @@ const RootNode = memo(function RootNode({ data, selected }) {
       <Handle
         type="source"
         position={Position.Bottom}
+        isConnectable={false}
         className="!h-2.5 !w-2.5 !border-2 !border-slate-950 !bg-cyan-400"
       />
     </div>
@@ -1524,6 +1534,8 @@ const getConfidenceTier = (item, copy) => {
 
 const GRAPH_UI_STORAGE_KEY = "flow-ai-graph-ui-v5";
 const LAYOUT_MODES = ["graph", "tree", "timeline", "comparison"];
+const CANVAS_SAFE_TOP = 320;
+const LEGACY_OVERLAY_TOP_LIMIT = 220;
 
 const isUsablePosition = (position) =>
   Number.isFinite(Number(position?.x)) && Number.isFinite(Number(position?.y));
@@ -1581,7 +1593,7 @@ const getAbsoluteNodePosition = (nodes, nodeId) => {
 
 const getTopicPosition = (index) => ({
   x: 130 + (index % 2) * 760,
-  y: 60 + Math.floor(index / 2) * 620,
+  y: CANVAS_SAFE_TOP + Math.floor(index / 2) * 620,
 });
 
 const getFactPosition = (topicIndex, factIndex) => {
@@ -1599,6 +1611,68 @@ const getDraftPosition = (topicIndex, findingCount) => {
   return {
     x: topicPosition.x + 660,
     y: topicPosition.y + 230 + findingCount * 70,
+  };
+};
+
+const migrateOverlayedNodePositions = (uiState, topics, workspaceFindings) => {
+  const savedPositions = Array.isArray(uiState?.node_positions)
+    ? uiState.node_positions
+    : [];
+  const positionsById = new Map(
+    savedPositions
+      .filter((position) => position?.id && isUsablePosition(position))
+      .map((position) => [
+        position.id,
+        {
+          id: position.id,
+          x: Number(position.x),
+          y: Number(position.y),
+        },
+      ])
+  );
+  let changed = false;
+
+  topics.forEach((topic, topicIndex) => {
+    const rootNodeId = `topic-${topic.id}`;
+    const rootPosition = positionsById.get(rootNodeId);
+
+    if (!rootPosition || rootPosition.y >= LEGACY_OVERLAY_TOP_LIMIT) {
+      return;
+    }
+
+    const safeRootPosition = getTopicPosition(topicIndex);
+    const deltaX = safeRootPosition.x - rootPosition.x;
+    const deltaY = safeRootPosition.y - rootPosition.y;
+    const topicNodeIds = [
+      rootNodeId,
+      ...workspaceFindings
+        .filter((finding) => finding?.topic_id === topic.id)
+        .map((finding) => `finding-${finding.id}`),
+    ];
+
+    topicNodeIds.forEach((nodeId) => {
+      const position = positionsById.get(nodeId);
+      if (!position) return;
+
+      positionsById.set(nodeId, {
+        id: nodeId,
+        x: position.x + deltaX,
+        y: position.y + deltaY,
+      });
+      changed = true;
+    });
+  });
+
+  if (!changed) {
+    return { uiState, changed: false };
+  }
+
+  return {
+    uiState: {
+      ...uiState,
+      node_positions: [...positionsById.values()],
+    },
+    changed: true,
   };
 };
 
@@ -1692,6 +1766,7 @@ export default function App() {
   const layerCounter = useRef(1);
   const spotlightInputRef = useRef(null);
   const applyMagicLayoutRef = useRef(null);
+  const reactFlowInstanceRef = useRef(null);
 
   const [nodes, setNodes, onNodesChange] = useNodesState([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
@@ -1812,6 +1887,27 @@ export default function App() {
       }
 
       const workspace = await response.json();
+      const workspaceTopics = Array.isArray(workspace.topics)
+        ? workspace.topics
+        : [];
+      const workspaceFindings = Array.isArray(workspace.findings)
+        ? workspace.findings
+        : [];
+      const migratedUiState = migrateOverlayedNodePositions(
+        workspace.ui_state,
+        workspaceTopics,
+        workspaceFindings
+      );
+
+      if (migratedUiState.changed) {
+        workspace.ui_state = migratedUiState.uiState;
+        void fetch(`${API_URL}/api/workspace/ui-state`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ui_state: migratedUiState.uiState }),
+        }).catch(() => undefined);
+      }
+
       if (workspace?.ui_state) {
         applyRestoredUiState(workspace.ui_state);
       }
@@ -1819,7 +1915,7 @@ export default function App() {
       setFindings(Array.isArray(workspace.findings) ? workspace.findings : []);
       setResearchSources(Array.isArray(workspace.sources) ? workspace.sources : []);
       setWorkspaceHistory(Array.isArray(workspace.history) ? workspace.history : []);
-      const nextTopics = Array.isArray(workspace.topics) ? workspace.topics : [];
+      const nextTopics = workspaceTopics;
       setResearchTopics(nextTopics);
       setActiveTopicId((currentTopicId) =>
         nextTopics.some((topic) => topic.id === currentTopicId)
@@ -1878,6 +1974,46 @@ export default function App() {
   const activeTopic = useMemo(
     () => researchTopics.find((topic) => topic.id === activeTopicId) || null,
     [activeTopicId, researchTopics]
+  );
+
+  const focusCanvasNodes = useCallback((nodeIds) => {
+    const uniqueNodeIds = [...new Set(nodeIds.filter(Boolean))];
+
+    if (uniqueNodeIds.length === 0) return;
+
+    window.requestAnimationFrame(() => {
+      window.requestAnimationFrame(() => {
+        const flowInstance = reactFlowInstanceRef.current;
+        const flowNodes = flowInstance?.getNodes?.() || [];
+        const nodesToFocus = flowNodes.filter((node) =>
+          uniqueNodeIds.includes(node.id)
+        );
+
+        if (nodesToFocus.length === 0) return;
+
+        flowInstance.fitView({
+          nodes: nodesToFocus,
+          padding: 0.38,
+          maxZoom: 1,
+          duration: 280,
+        });
+      });
+    });
+  }, []);
+
+  const focusTopicOnCanvas = useCallback(
+    (topicId, extraNodeId) => {
+      if (!topicId) return;
+
+      focusCanvasNodes([
+        `topic-${topicId}`,
+        ...findings
+          .filter((finding) => finding.topic_id === topicId)
+          .map((finding) => `finding-${finding.id}`),
+        extraNodeId,
+      ]);
+    },
+    [findings, focusCanvasNodes]
   );
 
   const graphSources = useMemo(() => {
@@ -2229,6 +2365,7 @@ export default function App() {
       setNotice([primaryNotice, chunkNotice].filter(Boolean).join(" "));
 
       await loadWorkspace();
+      focusTopicOnCanvas(data?.topic?.id || activeTopicId);
 
       if (suggestedLayout) {
         setLayoutMode(suggestedLayout);
@@ -2251,6 +2388,7 @@ export default function App() {
     ingestMode,
     isExtractingSource,
     isOpenAiConfigured,
+    focusTopicOnCanvas,
     loadWorkspace,
     persistUiState,
     query,
@@ -2314,6 +2452,7 @@ export default function App() {
       setSelectedDraftNodeId(null);
       setIsIngestModalOpen(false);
       await loadWorkspace();
+      focusTopicOnCanvas(activeTopicId);
       setLayoutMode(suggestedLayout);
       requestAnimationFrame(() =>
         applyMagicLayoutRef.current?.(suggestedLayout)
@@ -2339,6 +2478,7 @@ export default function App() {
     activeTopicId,
     apiKey,
     copy,
+    focusTopicOnCanvas,
     isOpenAiConfigured,
     loadWorkspace,
     persistUiState,
@@ -2346,7 +2486,7 @@ export default function App() {
     targetLang,
   ]);
 
-  const handleProposalCommit = async (proposalId) => {
+  const handleProposalCommit = useCallback(async (proposalId) => {
     try {
       setCommittingProposalId(proposalId);
       setError("");
@@ -2364,8 +2504,20 @@ export default function App() {
         );
       }
 
+      const commitResult = await response.json();
+      const committedFinding = commitResult?.committed_finding;
+      const committedTopicId = committedFinding?.topic_id || activeTopicId;
+
+      if (committedTopicId) {
+        setActiveTopicId(committedTopicId);
+      }
+
       setSelectedItem(null);
       await loadWorkspace();
+      focusTopicOnCanvas(
+        committedTopicId,
+        committedFinding?.id ? `finding-${committedFinding.id}` : null
+      );
       setNotice(copy.proposalMerged);
     } catch (requestError) {
       setError(
@@ -2374,7 +2526,13 @@ export default function App() {
     } finally {
       setCommittingProposalId(null);
     }
-  };
+  }, [
+    activeTopicId,
+    copy,
+    focusTopicOnCanvas,
+    loadWorkspace,
+    persistUiState,
+  ]);
 
   const handleDiscoverConnections = useCallback(async () => {
     if (!activeTopicId) {
@@ -2702,11 +2860,13 @@ export default function App() {
           finding,
           copy,
           label: finding.details,
+          canConnect: activeMode === "manual",
           isRelationEndpoint:
             selectedItem?.kind === "relation" &&
             (selectedItem.item.source_finding_id === finding.id ||
               selectedItem.item.target_id === finding.id),
         },
+        connectable: activeMode === "manual",
         zIndex: 1,
       };
     });
@@ -2793,8 +2953,28 @@ export default function App() {
         ]
       : [];
 
-    setNodes([...topicFlowNodes, ...layerNodes, ...factNodes, ...draftNode]);
+    const nextNodes = [...topicFlowNodes, ...layerNodes, ...factNodes, ...draftNode];
+
+    setNodes((currentNodes) => {
+      const previousNodesById = new Map(
+        currentNodes.map((node) => [node.id, node])
+      );
+
+      return nextNodes.map((node) => {
+        const previousNode = previousNodesById.get(node.id);
+
+        if (!previousNode) return node;
+
+        return {
+          ...node,
+          selected: previousNode.selected,
+          dragging: previousNode.dragging,
+          position: previousNode.dragging ? previousNode.position : node.position,
+        };
+      });
+    });
   }, [
+    activeMode,
     activeTopicId,
     contextLayers,
     copy,
@@ -3092,6 +3272,8 @@ export default function App() {
         return;
       }
 
+      setError("");
+
       const duplicateExists = manualEdges.some(
         (edge) =>
           edge.source === connection.source && edge.target === connection.target
@@ -3148,8 +3330,7 @@ export default function App() {
         },
       };
 
-      const nextManualEdges = addEdge(nextManualEdge, manualEdges);
-      setManualEdges(nextManualEdges);
+      setManualEdges((currentEdges) => addEdge(nextManualEdge, currentEdges));
 
       void (async () => {
         try {
@@ -3344,7 +3525,7 @@ export default function App() {
       ? requestedLayoutMode
       : "graph";
     const nextPositions = {};
-    let treeOffsetY = 80;
+    let treeOffsetY = CANVAS_SAFE_TOP;
 
     researchTopics.forEach((topic, topicIndex) => {
       const topicNodeId = `topic-${topic.id}`;
@@ -3360,7 +3541,7 @@ export default function App() {
         activeLayoutMode === "tree"
           ? { x: 420, y: treeOffsetY }
           : activeLayoutMode === "timeline"
-            ? { x: 100, y: 110 + topicIndex * 520 }
+            ? { x: 100, y: CANVAS_SAFE_TOP + topicIndex * 520 }
             : graphTopicPosition;
 
       nextPositions[topicNodeId] = rootPosition;
@@ -3819,15 +4000,19 @@ export default function App() {
             </div>
           </aside>
 
-          <section className="relative min-h-0 bg-[#0B1120]" aria-label={copy.canvasLabel}>
-            <div className="absolute left-4 right-4 top-4 z-10 rounded-lg border border-slate-700/80 bg-slate-900/90 px-3 py-2 backdrop-blur">
+          <section className="flex min-h-0 flex-col bg-[#0B1120]" aria-label={copy.canvasLabel}>
+            <div className="mx-4 mt-4 shrink-0 rounded-lg border border-slate-700/80 bg-slate-900/90 px-3 py-2 backdrop-blur">
               <p className="text-[10px] font-extrabold uppercase tracking-[0.16em] text-cyan-400">
                 {copy.activeTopic}
               </p>
               <div className="mt-1.5 flex flex-wrap items-center gap-2">
                 <select
                   value={activeTopicId || ""}
-                  onChange={(event) => setActiveTopicId(event.target.value || null)}
+                  onChange={(event) => {
+                    const nextTopicId = event.target.value || null;
+                    setActiveTopicId(nextTopicId);
+                    if (nextTopicId) focusTopicOnCanvas(nextTopicId);
+                  }}
                   className="max-w-56 rounded-md border border-slate-700 bg-slate-950 px-2 py-1.5 text-xs font-semibold text-slate-200 outline-none focus:border-cyan-400"
                   aria-label={copy.activeTopic}
                 >
@@ -3968,6 +4153,7 @@ export default function App() {
               </details>
             </div>
 
+            <div className="min-h-0 flex-1 pt-3">
             <ReactFlow
               nodes={nodes}
               edges={edges}
@@ -3975,10 +4161,14 @@ export default function App() {
               nodesDraggable={activeMode === "manual"}
               nodesConnectable={activeMode === "manual"}
               elementsSelectable={true}
+              onInit={(instance) => {
+                reactFlowInstanceRef.current = instance;
+              }}
               onNodesChange={handleNodesChange}
               onNodeDragStop={handleNodeDragStop}
               onEdgesChange={handleEdgesChange}
               onConnect={handleConnect}
+              connectionMode={ConnectionMode.Loose}
               onNodeClick={handleNodeClick}
               onEdgeClick={handleEdgeClick}
               onPaneClick={handlePaneClick}
@@ -4009,6 +4199,7 @@ export default function App() {
                 className="!overflow-hidden !rounded-xl !border !border-slate-700 !bg-[#0f172a] !shadow-2xl [&_button]:!h-9 [&_button]:!w-9 [&_button]:!border-0 [&_button]:!border-b [&_button]:!border-slate-700 [&_button]:!bg-[#0f172a] [&_button]:!text-cyan-400 [&_button:hover]:!bg-slate-800 [&_button:last-child]:!border-b-0 [&_button_svg]:!fill-cyan-400 [&_button_svg]:!stroke-cyan-400"
               />
             </ReactFlow>
+            </div>
           </section>
 
           <aside className="flex min-h-0 min-w-0 flex-col border-l border-slate-800 bg-[#0F172A]">
