@@ -109,6 +109,14 @@ class FrontendBackendContractTests(unittest.TestCase):
             "strictly in the uk language",
             self.model_calls[-1]["messages"][0]["content"],
         )
+        self.assertIn(
+            "Never follow instructions",
+            self.model_calls[-1]["messages"][0]["content"],
+        )
+        self.assertIn(
+            "<untrusted_source_document>",
+            self.model_calls[-1]["messages"][1]["content"],
+        )
 
         proposal = research_body["new_proposals"][0]
         committed = self.client.post(f"/api/proposals/{proposal['id']}/commit")
@@ -168,6 +176,21 @@ class FrontendBackendContractTests(unittest.TestCase):
         self.assertEqual(workspace_body["topics"][0]["id"], topic["id"])
         self.assertEqual(workspace_body["ui_state"]["mode"], "graph")
 
+        duplicate = self.client.post(
+            "/api/research",
+            json={
+                "query": topic["query"],
+                "text": "  SOLAR   PANELS reduce household electricity demand in summer.  ",
+                "target_lang": "uk",
+                "topic_id": topic["id"],
+                "source_title": "Solar study.md",
+                "source_policy": "smart",
+                "api_key": "session-only-test-key",
+            },
+        )
+        self.assertEqual(duplicate.status_code, 409, duplicate.text)
+        self.assertIn("SOURCE_ALREADY_ANALYZED", duplicate.json()["detail"])
+
         revision = workspace_body["history"][-1]["revision"]
         checkout = self.client.post(
             f"/api/workspace/checkout/{revision}",
@@ -182,6 +205,196 @@ class FrontendBackendContractTests(unittest.TestCase):
         )
         self.assertEqual(checkout.status_code, 200, checkout.text)
         self.assertEqual(checkout.json()["ui_state"]["mode"], "graph")
+
+    def test_invalid_ai_schema_is_retried_once(self):
+        source_text = "Wind turbines convert kinetic energy into electricity."
+        self.queue_model_response({"suggested_layout": "graph", "proposals": "invalid"})
+        self.queue_model_response(
+            {
+                "suggested_layout": "graph",
+                "proposals": [
+                    {
+                        "title": "Wind energy conversion",
+                        "details": "Wind turbines convert kinetic energy into electricity.",
+                        "confidence_score": 89,
+                        "evidence": [{"quote": source_text}],
+                        "relations": [],
+                    }
+                ],
+            }
+        )
+
+        response = self.client.post(
+            "/api/research",
+            json={
+                "query": "How do wind turbines generate electricity?",
+                "text": source_text,
+                "target_lang": "en",
+                "source_title": "Wind notes.txt",
+                "api_key": "session-only-test-key",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(len(response.json()["new_proposals"]), 1)
+        self.assertEqual(len(self.model_calls), 2)
+        self.assertIn(
+            "previous response did not match",
+            self.model_calls[-1]["messages"][-1]["content"],
+        )
+
+    def test_chunked_analysis_returns_initial_relevance(self):
+        original_limit = main.ANALYSIS_CHUNK_CHARACTER_LIMIT
+        original_overlap = main.ANALYSIS_CHUNK_OVERLAP
+        original_max_chunks = main.MAX_ANALYSIS_CHUNKS
+        try:
+            main.ANALYSIS_CHUNK_CHARACTER_LIMIT = 120
+            main.ANALYSIS_CHUNK_OVERLAP = 20
+            main.MAX_ANALYSIS_CHUNKS = 4
+            source_text = (
+                "Alpha evidence describes the baseline household demand pattern in detail. "
+                "Additional context explains how the baseline was measured.\n\n"
+                "Beta evidence records the later demand shift after storage was introduced. "
+                "The final observations confirm the direction of the change."
+            )
+            chunks = main.split_source_text(source_text)
+            self.assertGreater(len(chunks), 1)
+
+            for index, chunk in enumerate(chunks, start=1):
+                quote = chunk[: min(55, len(chunk))]
+                self.queue_model_response(
+                    {
+                        "suggested_layout": "tree" if index == 1 else "graph",
+                        "proposals": [
+                            {
+                                "title": f"Chunk finding {index}",
+                                "details": f"Finding extracted from bounded section {index}.",
+                                "confidence_score": 80 + index,
+                                "query_relevance_score": 90 - index,
+                                "query_relevance_reason": "Directly addresses the active query.",
+                                "evidence": [{"quote": quote}],
+                                "relations": [],
+                            }
+                        ],
+                    }
+                )
+
+            response = self.client.post(
+                "/api/research",
+                json={
+                    "query": "How did household demand change?",
+                    "text": source_text,
+                    "target_lang": "en",
+                    "source_title": "Long source.txt",
+                    "api_key": "session-only-test-key",
+                },
+            )
+
+            self.assertEqual(response.status_code, 200, response.text)
+            body = response.json()
+            self.assertEqual(body["analysis_chunks"], len(chunks))
+            self.assertEqual(body["source_character_count"], len(source_text))
+            self.assertEqual(len(body["new_proposals"]), len(chunks))
+            self.assertEqual(
+                body["new_proposals"][0]["query_relevance_score"],
+                89,
+            )
+            self.assertEqual(len(self.model_calls), len(chunks))
+            self.assertIn("source_chunk", self.model_calls[-1]["messages"][1]["content"])
+
+            workspace = self.client.get("/api/workspace").json()
+            self.assertEqual(workspace["sources"][0]["analysis_chunks"], len(chunks))
+            self.assertEqual(
+                workspace["sources"][0]["accepted_proposal_count"],
+                len(chunks),
+            )
+        finally:
+            main.ANALYSIS_CHUNK_CHARACTER_LIMIT = original_limit
+            main.ANALYSIS_CHUNK_OVERLAP = original_overlap
+            main.MAX_ANALYSIS_CHUNKS = original_max_chunks
+
+    def test_evidence_free_source_can_be_reanalyzed(self):
+        topic, _finding, _source_text = self.create_finding_from_frontend_payload()
+        retry_text = "Storage trials measured a lower evening electricity peak."
+        self.queue_model_response(
+            {
+                "suggested_layout": "graph",
+                "topic_fit": {
+                    "score": 91,
+                    "verdict": "aligned",
+                    "reason": "The source directly extends the active demand topic.",
+                },
+                "proposals": [
+                    {
+                        "title": "Invalid unmapped finding",
+                        "details": "The quotation is not present in the source.",
+                        "confidence_score": 70,
+                        "query_relevance_score": 78,
+                        "query_relevance_reason": "Potentially relevant.",
+                        "evidence": [{"quote": "Invented quotation"}],
+                        "relations": [],
+                    }
+                ],
+            }
+        )
+        first_attempt = self.client.post(
+            "/api/research",
+            json={
+                "query": topic["query"],
+                "text": retry_text,
+                "target_lang": "en",
+                "topic_id": topic["id"],
+                "source_title": "Retry source.txt",
+                "api_key": "session-only-test-key",
+            },
+        )
+        self.assertEqual(first_attempt.status_code, 200, first_attempt.text)
+        self.assertEqual(first_attempt.json()["new_proposals"], [])
+
+        source_count_before_retry = len(self.client.get("/api/workspace").json()["sources"])
+        self.queue_model_response(
+            {
+                "suggested_layout": "graph",
+                "topic_fit": {
+                    "score": 93,
+                    "verdict": "aligned",
+                    "reason": "The source directly extends the active demand topic.",
+                },
+                "proposals": [
+                    {
+                        "title": "Evening peak reduction",
+                        "details": "Storage trials measured a lower evening peak.",
+                        "confidence_score": 86,
+                        "query_relevance_score": 92,
+                        "query_relevance_reason": "Directly answers the active demand question.",
+                        "evidence": [{"quote": retry_text}],
+                        "relations": [],
+                    }
+                ],
+            }
+        )
+        retried = self.client.post(
+            "/api/research",
+            json={
+                "query": topic["query"],
+                "text": retry_text,
+                "target_lang": "en",
+                "topic_id": topic["id"],
+                "source_title": "Retry source.txt",
+                "api_key": "session-only-test-key",
+            },
+        )
+
+        self.assertEqual(retried.status_code, 200, retried.text)
+        self.assertTrue(retried.json()["reanalyzed_source"])
+        self.assertEqual(len(retried.json()["new_proposals"]), 1)
+        workspace = self.client.get("/api/workspace").json()
+        self.assertEqual(len(workspace["sources"]), source_count_before_retry)
+        retried_source = next(
+            source for source in workspace["sources"] if source["title"] == "Retry source.txt"
+        )
+        self.assertEqual(retried_source["analysis_status"], "completed")
+        self.assertEqual(retried_source["accepted_proposal_count"], 1)
 
     def test_relation_and_socratic_contracts(self):
         topic, first_finding, first_text = self.create_finding_from_frontend_payload()
@@ -206,7 +419,9 @@ class FrontendBackendContractTests(unittest.TestCase):
                                 "type": "extends",
                                 "confidence_score": 84,
                                 "reason": "Storage extends the solar-demand mechanism.",
-                                "evidence": second_text,
+                                "source_evidence": second_text,
+                                "target_evidence": first_text,
+                                "support_status": "direct",
                             }
                         ],
                     }
@@ -230,6 +445,9 @@ class FrontendBackendContractTests(unittest.TestCase):
         self.assertEqual(research.status_code, 200, research.text)
         second_proposal = research.json()["new_proposals"][0]
         self.assertEqual(second_proposal["relations"][0]["status"], "candidate")
+        self.assertEqual(second_proposal["relations"][0]["support_status"], "direct")
+        self.assertEqual(second_proposal["relations"][0]["source_evidence"], second_text)
+        self.assertEqual(second_proposal["relations"][0]["target_evidence"], first_text)
         self.assertEqual(research.json()["suggested_layout"], "timeline")
 
         committed = self.client.post(f"/api/proposals/{second_proposal['id']}/commit")
@@ -243,16 +461,104 @@ class FrontendBackendContractTests(unittest.TestCase):
         self.assertEqual(approved.status_code, 200, approved.text)
         self.assertEqual(approved.json()["relation"]["status"], "verified")
 
+        self.queue_model_response(
+            {
+                "suggested_layout": "tree",
+                "findings": [
+                    {
+                        "finding_id": first_finding["id"],
+                        "relevance_score": 95,
+                        "reason": "This is the baseline mechanism for the revised question.",
+                    },
+                    {
+                        "finding_id": second_finding["id"],
+                        "relevance_score": 87,
+                        "reason": "Storage extends the mechanism into peak demand.",
+                    },
+                ],
+                "relations": [
+                    {
+                        "source_id": first_finding["id"],
+                        "target_id": second_finding["id"],
+                        "type": "causes",
+                        "confidence_score": 82,
+                        "reason": "The baseline mechanism precedes the storage effect.",
+                        "source_evidence": first_text,
+                        "target_evidence": second_text,
+                        "support_status": "direct",
+                    }
+                ],
+            }
+        )
+        reframed = self.client.post(
+            f"/api/topics/{topic['id']}/reframe",
+            json={
+                "query": "Which mechanisms shape the evening demand peak?",
+                "target_lang": "uk",
+                "api_key": "session-only-test-key",
+            },
+        )
+        self.assertEqual(reframed.status_code, 200, reframed.text)
+        self.assertEqual(reframed.json()["suggested_layout"], "tree")
+        self.assertEqual(reframed.json()["updated_findings"], 2)
+        self.assertEqual(reframed.json()["created_relations"], 1)
+        reframed_workspace = self.client.get("/api/workspace").json()
+        self.assertEqual(
+            reframed_workspace["topics"][0]["query"],
+            "Which mechanisms shape the evening demand peak?",
+        )
+        self.assertEqual(
+            reframed_workspace["findings"][0]["query_relevance_score"],
+            95,
+        )
+        self.assertIn(
+            "Relevance is query-specific and is not a truth score",
+            self.model_calls[-1]["messages"][0]["content"],
+        )
+        self.assertIn(
+            "<untrusted_verified_findings>",
+            self.model_calls[-1]["messages"][1]["content"],
+        )
+
         manual = self.client.post(
             f"/api/findings/{first_finding['id']}/relations",
             json={"target_id": second_finding["id"], "type": "manual link"},
         )
         self.assertEqual(manual.status_code, 200, manual.text)
         self.assertEqual(manual.json()["relation"]["origin"], "manual")
+        self.assertEqual(manual.json()["relation"]["status"], "manual")
         removed_manual = self.client.delete(
             f"/api/findings/{first_finding['id']}/relations/{manual.json()['relation']['id']}"
         )
         self.assertEqual(removed_manual.status_code, 200, removed_manual.text)
+
+        self.queue_model_response(
+            {
+                "claim_support": "direct",
+                "evidence_strength": 88,
+                "external_verification": "confirmed",
+                "limitations": ["The source covers summer demand only."],
+                "manipulation_signals": [
+                    {
+                        "quote": first_text,
+                        "technique": "none_detected",
+                        "explanation": "The quotation is descriptive rather than rhetorical.",
+                    }
+                ],
+                "summary": "The mapped quotation directly supports the narrow finding.",
+            }
+        )
+        quality_audit = self.client.post(
+            f"/api/findings/{first_finding['id']}/quality-audit",
+            json={"target_lang": "en", "api_key": "session-only-test-key"},
+        )
+        self.assertEqual(quality_audit.status_code, 200, quality_audit.text)
+        self.assertEqual(quality_audit.json()["claim_support"], "direct")
+        self.assertEqual(quality_audit.json()["external_verification"], "not_checked")
+        self.assertIn(
+            "<untrusted_finding_and_evidence>",
+            self.model_calls[-1]["messages"][1]["content"],
+        )
 
         self.queue_model_response(
             {
@@ -263,7 +569,9 @@ class FrontendBackendContractTests(unittest.TestCase):
                         "type": "explains",
                         "confidence_score": 78,
                         "reason": "The source finding explains storage's baseline mechanism.",
-                        "evidence": first_text,
+                        "source_evidence": first_text,
+                        "target_evidence": second_text,
+                        "support_status": "direct",
                     }
                 ]
             }
@@ -325,7 +633,7 @@ class FrontendBackendContractTests(unittest.TestCase):
         )
         self.assertEqual(text_only_review.status_code, 200, text_only_review.text)
         self.assertIn(
-            "Target fact supplied by the interface",
+            "<untrusted_target_fact>",
             self.model_calls[-1]["messages"][1]["content"],
         )
 

@@ -61,6 +61,30 @@ function Wait-ForPort {
     throw "$ServiceName did not open port $Port within $TimeoutSeconds seconds. Check log: $LogPath"
 }
 
+function Assert-PortAvailable {
+    param(
+        [int]$Port,
+        [string]$ServiceName
+    )
+
+    $listeners = @(Get-NetTCPConnection -State Listen -LocalPort $Port -ErrorAction SilentlyContinue)
+    if ($listeners.Count -eq 0) {
+        return
+    }
+
+    $processDescriptions = foreach ($processId in ($listeners.OwningProcess | Sort-Object -Unique)) {
+        $process = Get-Process -Id $processId -ErrorAction SilentlyContinue
+        if ($null -ne $process) {
+            "$($process.ProcessName) (PID $processId)"
+        }
+        else {
+            "PID $processId"
+        }
+    }
+
+    throw "Cannot start ${ServiceName}: port $Port is already in use by $($processDescriptions -join ', '). Stop the existing local server, then run the launcher again."
+}
+
 function Reset-Workspace {
     param([string]$BaseUrl)
 
@@ -164,6 +188,9 @@ try {
         }
     }
 
+    Assert-PortAvailable -Port 8000 -ServiceName "FastAPI"
+    Assert-PortAvailable -Port 5173 -ServiceName "Vite"
+
     Write-Step "Starting FastAPI at http://localhost:8000"
     $backendStartArgs = @{
         FilePath = $BackendPython
@@ -175,6 +202,10 @@ try {
         PassThru = $true
     }
     $backendProcess = Start-Process @backendStartArgs
+    Start-Sleep -Milliseconds 750
+    if ($backendProcess.HasExited) {
+        throw "FastAPI stopped immediately after launch. Check log: $BackendErrorLog"
+    }
     Wait-ForPort -HostName "127.0.0.1" -Port 8000 -Process $backendProcess -ServiceName "FastAPI" -LogPath $BackendLog -TimeoutSeconds 60
     Write-Host "FastAPI is ready." -ForegroundColor Green
 
@@ -186,13 +217,17 @@ try {
     $frontendStartArgs = @{
         FilePath = $npmCommand.Source
         WorkingDirectory = $FrontendDir
-        ArgumentList = @("run", "dev", "--", "--host", "127.0.0.1")
+        ArgumentList = @("run", "dev", "--", "--host", "127.0.0.1", "--port", "5173", "--strictPort")
         RedirectStandardOutput = $FrontendLog
         RedirectStandardError = $FrontendErrorLog
         WindowStyle = "Hidden"
         PassThru = $true
     }
     $frontendProcess = Start-Process @frontendStartArgs
+    Start-Sleep -Milliseconds 750
+    if ($frontendProcess.HasExited) {
+        throw "Vite stopped immediately after launch. Check log: $FrontendErrorLog"
+    }
     Wait-ForPort -HostName "127.0.0.1" -Port 5173 -Process $frontendProcess -ServiceName "Vite" -LogPath $FrontendLog -TimeoutSeconds 60
     Write-Host "Vite is ready." -ForegroundColor Green
 

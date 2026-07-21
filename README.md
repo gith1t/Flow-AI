@@ -22,7 +22,8 @@ Flow-AI answers these questions in one local-first canvas. AI proposals stay sep
 - Create a research topic and extract evidence-backed proposals.
 - Review confidence scores and exact quotations in the AI Inbox.
 - Merge approved facts into a React Flow knowledge graph.
-- Discover evidence-grounded relationships while isolating unrelated sources.
+- Discover reviewable relationships that require an exact quotation from both connected findings; incomplete suggestions remain hypotheses.
+- Run an on-demand Internal Evidence Check for a verified fact: it rates support from its mapped quotation, flags limitations and concrete rhetorical signals, and clearly marks external verification as not checked.
 - Use Context Co-Pilot for targeted questions and hypothesis drafts.
 - Group facts, switch Graph/Tree/Timeline/Comparison layouts, and restore previous UI snapshots.
 - Download a Markdown report containing verified findings and evidence.
@@ -47,7 +48,7 @@ From the repository root:
 powershell -ExecutionPolicy Bypass -File .\start-flow-ai.ps1
 ```
 
-The launcher creates the backend environment, installs missing dependencies, starts FastAPI on `http://localhost:8000`, starts Vite on `http://localhost:5173`, and opens the browser.
+The launcher creates the backend environment, installs missing dependencies, starts FastAPI on `http://localhost:8000`, starts Vite on `http://localhost:5173`, and opens the browser. It stops with a clear message if either port is already occupied, so it never silently opens an older app instance.
 
 For a clean demo session, explicitly reset the local workspace before opening the app:
 
@@ -98,9 +99,10 @@ Session keys are used only for the current browser session and are not written t
 2. Open Spotlight Ingestion and select **Auto**, **English**, or **Ukrainian**.
 3. Enter a query and upload [`demo/sample_research.md`](demo/sample_research.md), or use your own permitted source.
 4. Analyze the source, inspect evidence in **AI Inbox**, and merge proposals.
-5. Merge two or more facts and run **Discover Connections**.
-6. Select a fact and run **Context Co-Pilot**.
-7. Try a layout, group facts, restore a previous revision, and download the report.
+5. Select a merged fact and run **Internal Evidence Check** to inspect its local support and limitations.
+6. Merge two or more facts and run **Discover Connections**.
+7. Select a fact and run **Context Co-Pilot**.
+8. Try a layout, group facts, restore a previous revision, and download the report.
 
 ## Codex and GPT-5.6
 
@@ -132,7 +134,7 @@ python -m unittest discover -s backend/tests -p "test_*.py" -v
 
 ## Current scope
 
-This is a local-first hackathon MVP. Hosted multi-user persistence, authentication, OCR for image-only PDFs, and production job queues are outside the current scope.
+This is a local-first hackathon MVP. Evidence mapping and the Internal Evidence Check assess only the imported workspace; they do not replace external source verification or establish real-world truth. Hosted multi-user persistence, authentication, OCR for image-only PDFs, external web fact checking, and production job queues are outside the current scope.
 
 ## License
 

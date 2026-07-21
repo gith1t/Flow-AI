@@ -14,12 +14,32 @@ import {
 import "@xyflow/react/dist/style.css";
 
 const API_URL = "http://localhost:8000";
+const ANALYSIS_CHUNK_CHARACTER_LIMIT = 24_000;
+const ANALYSIS_CHUNK_OVERLAP = 800;
+const MAX_ANALYSIS_CHUNKS = 8;
+const MAX_ANALYSIS_CHARACTERS =
+  ANALYSIS_CHUNK_CHARACTER_LIMIT +
+  (MAX_ANALYSIS_CHUNKS - 1) *
+    (ANALYSIS_CHUNK_CHARACTER_LIMIT - ANALYSIS_CHUNK_OVERLAP);
+
+const estimateAnalysisChunks = (characterCount) => {
+  if (characterCount <= ANALYSIS_CHUNK_CHARACTER_LIMIT) return 1;
+
+  return Math.min(
+    MAX_ANALYSIS_CHUNKS,
+    1 +
+      Math.ceil(
+        (characterCount - ANALYSIS_CHUNK_CHARACTER_LIMIT) /
+          (ANALYSIS_CHUNK_CHARACTER_LIMIT - ANALYSIS_CHUNK_OVERLAP)
+      )
+  );
+};
 
 const UI_COPY = {
   en: {
     verifiedFact: "Verified Fact",
     verified: "Verified",
-    evidenceConfidence: "Evidence confidence",
+    aiConfidence: "AI confidence",
     unscored: "Unscored",
     reviewBranch: "Socratic Review Draft",
     socraticDraft: "Socratic Draft",
@@ -34,25 +54,39 @@ const UI_COPY = {
     facts: "facts",
     researchTopic: "Research Topic",
     sources: "sources",
+    sourceLibrary: "Source Library",
+    sourceLibrarySummary: (count) => `${count} imported source${count === 1 ? "" : "s"} in the active topic`,
+    sourcePages: (count) => `${count} page${count === 1 ? "" : "s"}`,
+    sourceCharacters: (count) => `${count.toLocaleString("en-US")} chars`,
+    sourceSections: (count) => `${count} analysis section${count === 1 ? "" : "s"}`,
+    sourceRetryNeeded: "Retry needed",
+    sourceReady: "Analyzed",
+    newTopicSourceReason: "This source establishes a new research topic.",
     addPaperSource: "+ Add paper / source",
-    manual: "● Manual",
-    review: "◉ Review",
-    magic: "✦ Magic",
+    manual: "Manual",
+    review: "Review",
+    magic: "Magic",
+    manualEdit: "● Manual edit",
+    runReviewAction: "◉ Run review",
+    autoArrangeAction: "✦ Auto arrange",
     graph: "Graph",
     tree: "Tree",
     timeline: "Timeline",
     compare: "Compare",
-    workspaceMode: "Workspace mode",
+    workspaceMode: "Workspace controls",
     layoutMode: "Graph layout mode",
     copilotThinking: "Co-Pilot thinking...",
     runCopilot: "Run Context Co-Pilot",
-    exportReport: "📥 Export Skill / Download Report",
     openIngestion: "Open research ingestion",
     spotlight: "Spotlight Ingestion",
     addEvidenceTo: (title) => `Add evidence to ${title || "research topic"}`,
     startNewTopic: "Start a new research topic",
+    editTopicTitle: (title) => `Reframe ${title || "research topic"}`,
     importEvidenceDescription: "Import another paper, note, or dataset. New findings will connect to the active topic and relevant verified facts.",
     newTopicDescription: "Define a concrete question and the first source. Flow-AI will create a dedicated topic root on the canvas.",
+    editTopicDescription: "Change the research question without uploading the papers again. Flow-AI keeps verified facts and exact quotations, recalculates query relevance, and rebuilds unverified AI relation suggestions.",
+    existingKnowledgeBase: "Existing evidence base",
+    reframeScope: (sources, findings) => `${sources || 0} source(s) and ${findings || 0} verified finding(s) will be reframed. Evidence text is never rewritten.`,
     close: "Close",
     sessionKey: "Session-only OpenAI key",
     sessionReady: "Session ready",
@@ -75,9 +109,9 @@ const UI_COPY = {
     firewallPolicy: "Relation Firewall policy",
     firewallDescription: "Choose how a source with uncertain topical fit should affect this research topic.",
     smartFirewall: "Smart firewall",
-    smartFirewallDescription: "Recommended: isolate unrelated sources and block weak AI links.",
+    smartFirewallDescription: "Keep uncertain sources in the topic, but block automatic weak links.",
     isolateUncertain: "Keep uncertain isolated",
-    isolateUncertainDescription: "Only strongly aligned sources join this topic.",
+    isolateUncertainDescription: "Recommended: only strongly aligned sources join this topic.",
     importWithoutLinks: "Import without links",
     importWithoutLinksDescription: "Keep facts here, but disable all automatic AI relations.",
     activeQuery: "Active Query",
@@ -86,6 +120,10 @@ const UI_COPY = {
     sourceTitlePlaceholder: "e.g. paper title, dataset name, or source label",
     researchDocument: "Research Document",
     documentPlaceholder: "Paste source material, notes, transcripts, or evidence...",
+    documentAnalysisPlan: (characters, chunks) =>
+      `${characters.toLocaleString("en-US")} characters · ${chunks === 1 ? "single-pass analysis" : `about ${chunks} evidence-safe analysis sections`}`,
+    sourceTooLarge: (limit) =>
+      `This source exceeds the safe limit of ${limit.toLocaleString("en-US")} characters. Split it into separate papers or sections so no evidence is silently omitted.`,
     importSource: "Import source file",
     importDescription: "PDF, DOCX, TXT, Markdown, CSV, TSV, JSON or LOG. PDF and DOCX are extracted by the backend and mapped back to evidence.",
     extracting: "Extracting readable text from the source…",
@@ -94,6 +132,8 @@ const UI_COPY = {
     analyzing: "Analyzing research...",
     analyzeSource: "Analyze Source → Connect Findings",
     analyzeResearch: "Analyze Research → Create Topic",
+    reframeTopic: "Reframe Topic → Rebuild Graph",
+    reframing: "Reframing topic...",
     aiInbox: "AI Inbox",
     proposals: "Proposals",
     loadingInbox: "Loading inbox...",
@@ -106,6 +146,7 @@ const UI_COPY = {
     selectTopic: "Select a topic",
     newTopic: "+ New topic",
     addPaper: "+ Add paper",
+    editTopic: "Edit question",
     deleting: "Deleting...",
     deleteTopic: "Delete topic",
     graphIntro: "New analysis creates proposals in AI Inbox. Merge verified facts, then discover evidence-grounded links or switch to Manual to draw your own.",
@@ -113,17 +154,20 @@ const UI_COPY = {
     searchFindings: "Search findings…",
     filterBySource: "Filter graph by source",
     allSources: "All sources",
-    minimumConfidence: "Minimum finding confidence",
-    anyConfidence: "Any confidence",
-    highConfidence: "High confidence · 85%+",
-    mediumConfidence: "Medium confidence · 65%+",
+    minimumConfidence: "Minimum AI confidence",
+    anyConfidence: "Any AI confidence",
+    highConfidence: "High AI confidence · 85%+",
+    mediumConfidence: "Medium AI confidence · 65%+",
+    highAiConfidence: "High",
+    mediumAiConfidence: "Medium",
+    lowAiConfidence: "Needs review",
     focusedTopic: "Focused: active topic",
     focusTopic: "Focus active topic",
     trail: "Trail",
     reviewEdge: "Socratic review",
     selected: "selected",
     group: "Group",
-    graphLegend: "Cyan = verified AI link · yellow dashed = review required · purple dashed = cross-topic hypothesis · yellow review edge = Socratic review.",
+    graphLegend: "Cyan = verified AI link · yellow dashed = review required · purple dashed = unverified hypothesis · yellow review edge = Socratic review.",
     socraticCopilot: "Socratic Co-Pilot",
     languageSetInIngestion: "Language · set in ingestion",
     magicLayout: "⚡ Magic Layout",
@@ -149,20 +193,42 @@ const UI_COPY = {
     restore: (revision) => `Restore r${revision}`,
     relationPath: "Relation Path",
     relationEvidence: "Relation Evidence · Strict Evidence Mapping",
+    sourceSideEvidence: "Source-side evidence",
+    targetSideEvidence: "Target-side evidence",
+    relationSupport: "AI support assessment",
+    legacySupport: "Legacy single-sided evidence",
     sourceEvidence: "Source Evidence · Strict Evidence Mapping",
     noEvidence: "No evidence available.",
     page: "Page",
     textSource: "Text source",
     character: "char",
-    firewallReview: "Relation Firewall · Human Review Required",
-    aiSuggestion: "AI suggestions stay provisional until you approve their evidence mapping.",
+    firewallReview: "Relation evidence review",
+    aiSuggestion: "AI links need exact quotations from both findings. Insufficient links remain hypotheses and cannot be approved.",
     pending: "pending",
-    confidence: "Confidence",
+    confidence: "AI confidence",
+    queryRelevance: "Query relevance",
     notScored: "not scored",
     saving: "Saving...",
     approveEvidence: "Approve evidence link",
     rejectLink: "Reject link",
     aiReasoning: "AI Reasoning",
+    evidenceQualityAudit: "Internal Evidence Check",
+    auditPending: "Not audited",
+    auditDescription: "Assess mapped source support, limits, and concrete rhetoric signals. It does not verify real-world truth.",
+    auditEvidence: "Audit evidence quality",
+    auditingEvidence: "Auditing evidence...",
+    auditCompleted: "Internal evidence check completed. It checks source support, not real-world truth.",
+    claimSupport: "Claim support",
+    directSupport: "Direct support",
+    partialSupport: "Partial support",
+    insufficientSupport: "Insufficient support",
+    evidenceStrength: "AI evidence-strength estimate",
+    externalVerification: "External verification",
+    notChecked: "Not externally checked",
+    limitations: "Limitations",
+    manipulationSignals: "Manipulation signals",
+    noManipulationSignals: "No concrete manipulation signals found in the mapped evidence.",
+    qualityAuditFailed: "Could not complete the evidence quality audit.",
     socraticQuestions: "Socratic Questions",
     proposedHypothesis: "Proposed Hypothesis",
     noSelection: "Select a proposal in AI Inbox or a verified fact on the canvas to inspect its Context Git State.",
@@ -171,6 +237,10 @@ const UI_COPY = {
     waitForExtraction: "Wait for source extraction to finish.",
     fillResearchFields: "Fill in Active Query and Research Document before analysis.",
     analysisFailed: "AI analysis failed.",
+    reframeFailed: "Could not reframe the research topic.",
+    topicNeedsVerifiedFacts: "Merge at least one evidence-grounded proposal before reframing this topic.",
+    topicReframed: (findings, relations) => `Research question updated. Re-ranked ${findings} verified finding(s) and created ${relations} relation suggestion(s) for review.`,
+    sourceAlreadyAnalyzed: "This exact document has already been analyzed in the active research topic.",
     topicDeleted: "Research topic deleted. A previous revision remains available in History.",
     chooseTopic: "Select a research topic before discovering connections.",
     noKeyForConnections: "Enter an OpenAI API key in Spotlight Ingestion before discovering connections.",
@@ -201,22 +271,26 @@ const UI_COPY = {
     proposalCommitFailed: "Could not merge the proposal into Workspace.",
     proposalMerged: "Finding merged into Workspace. Merge at least two findings in this topic to enable AI connection discovery.",
     noConnections: "No additional evidence-grounded connections were found between the verified facts.",
-    discoveryCreated: (count) => `Created ${count} evidence-grounded AI relation candidate${count === 1 ? "" : "s"}. Review it before it becomes verified.`,
+    discoveryCreated: (count) => `Created ${count} AI relation suggestion${count === 1 ? "" : "s"}. Only dual-evidence candidates can be approved.`,
     connectionDiscoveryFailed: "Could not discover connections between the facts.",
     aiApproveFailed: "Could not approve the AI evidence link.",
     aiRejectFailed: "Could not reject the AI evidence link.",
     manualRelationFailed: "Could not save the manual connection.",
+    manualFactsOnly: "Manual semantic links can only connect one verified Fact Node to another.",
+    savingManualLink: "Saving manual link...",
     checkoutFailed: "Could not restore the revision.",
     importWithoutLinksNotice: "Source imported without automatic AI relations, as requested by the import policy.",
     sourceFitNotice: (score, verdict) => `Source fit is ${score}/100 (${verdict}), so Flow-AI kept its facts separate from existing facts and created no AI relations.`,
     noEvidenceMappedNotice: "AI returned proposals, but none contained a quote that could be mapped back to the uploaded source. The source was saved; try a more focused excerpt or run the analysis again.",
+    retryableAnalysisNotice: "No evidence-grounded proposal passed exact quote validation. This source remains retryable: refine the query or source text and analyze it again.",
+    chunkedAnalysisComplete: (count) => `The full source was analyzed in ${count} bounded sections and deduplicated before entering AI Inbox.`,
     acceptedSkippedNotice: (accepted, skipped) => `Accepted ${accepted} evidence-grounded proposal${accepted === 1 ? "" : "s"}; skipped ${skipped} item${skipped === 1 ? "" : "s"} without valid source evidence.`,
     analysisWarning: "Analysis completed with a warning. Check the source and topic fit.",
   },
   uk: {
     verifiedFact: "Підтверджений факт",
     verified: "Підтверджено",
-    evidenceConfidence: "Надійність доказу",
+    aiConfidence: "Впевненість AI",
     unscored: "Без оцінки",
     reviewBranch: "Гілка сократичного огляду",
     socraticDraft: "Сократичний драфт",
@@ -231,25 +305,39 @@ const UI_COPY = {
     facts: "фактів",
     researchTopic: "Тема дослідження",
     sources: "джерел",
+    sourceLibrary: "Бібліотека джерел",
+    sourceLibrarySummary: (count) => `${count} імпортован${count === 1 ? "е джерело" : "их джерел"} в активній темі`,
+    sourcePages: (count) => `${count} сторін${count === 1 ? "ка" : "ок"}`,
+    sourceCharacters: (count) => `${count.toLocaleString("uk-UA")} симв.`,
+    sourceSections: (count) => `${count} секці${count === 1 ? "я" : "й"} аналізу`,
+    sourceRetryNeeded: "Потрібен повтор",
+    sourceReady: "Проаналізовано",
+    newTopicSourceReason: "Це джерело формує нову тему дослідження.",
     addPaperSource: "+ Додати paper / джерело",
-    manual: "● Ручний",
-    review: "◉ Огляд",
-    magic: "✦ Магія",
+    manual: "Ручний",
+    review: "Огляд",
+    magic: "Магія",
+    manualEdit: "● Ручне редагування",
+    runReviewAction: "◉ Запустити огляд",
+    autoArrangeAction: "✦ Автовпорядкування",
     graph: "Граф",
     tree: "Дерево",
     timeline: "Хронологія",
     compare: "Порівняння",
-    workspaceMode: "Режим роботи",
+    workspaceMode: "Керування робочим простором",
     layoutMode: "Режим структури графа",
     copilotThinking: "Co-Pilot аналізує...",
     runCopilot: "Запустити Context Co-Pilot",
-    exportReport: "📥 Експорт у Skill / звіт",
     openIngestion: "Відкрити імпорт дослідження",
     spotlight: "Spotlight-імпорт",
     addEvidenceTo: (title) => `Додати докази до ${title || "теми дослідження"}`,
     startNewTopic: "Почати нову тему дослідження",
+    editTopicTitle: (title) => `Перефокусувати ${title || "тему дослідження"}`,
     importEvidenceDescription: "Імпортуйте paper, нотатку або dataset. Нові факти з’єднаються з активною темою та релевантними підтвердженими фактами.",
     newTopicDescription: "Сформулюйте конкретне питання та додайте перше джерело. Flow-AI створить окремий кореневий вузол теми.",
+    editTopicDescription: "Змініть питання без повторного завантаження paper-ів. Flow-AI збереже підтверджені факти й точні цитати, перерахує релевантність до нового запиту та перебудує непідтверджені AI-зв’язки.",
+    existingKnowledgeBase: "Наявна доказова база",
+    reframeScope: (sources, findings) => `Буде перефокусовано ${sources || 0} джерел і ${findings || 0} підтверджених фактів. Текст доказів не переписується.`,
     close: "Закрити",
     sessionKey: "Сесійний OpenAI ключ",
     sessionReady: "Сесія готова",
@@ -272,9 +360,9 @@ const UI_COPY = {
     firewallPolicy: "Політика Relation Firewall",
     firewallDescription: "Оберіть, як джерело з невизначеною тематичною відповідністю впливатиме на цю тему.",
     smartFirewall: "Розумний firewall",
-    smartFirewallDescription: "Рекомендовано: ізолювати нерелевантні джерела та блокувати слабкі AI-зв’язки.",
+    smartFirewallDescription: "Залишати невизначені джерела в темі, але блокувати слабкі автоматичні зв’язки.",
     isolateUncertain: "Ізолювати невизначені",
-    isolateUncertainDescription: "До теми потрапляють лише джерела з високою відповідністю.",
+    isolateUncertainDescription: "Рекомендовано: до теми потрапляють лише джерела з високою відповідністю.",
     importWithoutLinks: "Імпорт без зв’язків",
     importWithoutLinksDescription: "Залишити факти в темі, але вимкнути автоматичні AI-зв’язки.",
     activeQuery: "Активний запит",
@@ -283,6 +371,10 @@ const UI_COPY = {
     sourceTitlePlaceholder: "наприклад, назва paper, dataset або джерела",
     researchDocument: "Документ дослідження",
     documentPlaceholder: "Вставте матеріали, нотатки, транскрипт або докази...",
+    documentAnalysisPlan: (characters, chunks) =>
+      `${characters.toLocaleString("uk-UA")} символів · ${chunks === 1 ? "аналіз за один прохід" : `орієнтовно ${chunks} безпечних секцій аналізу`}`,
+    sourceTooLarge: (limit) =>
+      `Джерело перевищує безпечний ліміт у ${limit.toLocaleString("uk-UA")} символів. Розділіть його на окремі papers або секції, щоб жоден доказ не був мовчки пропущений.`,
     importSource: "Імпорт файлу джерела",
     importDescription: "PDF, DOCX, TXT, Markdown, CSV, TSV, JSON або LOG. PDF і DOCX витягуються backend-ом і прив’язуються до доказів.",
     extracting: "Витягування тексту з джерела…",
@@ -291,6 +383,8 @@ const UI_COPY = {
     analyzing: "Аналіз дослідження...",
     analyzeSource: "Аналізувати джерело → з’єднати факти",
     analyzeResearch: "Аналізувати → створити тему",
+    reframeTopic: "Перефокусувати тему → перебудувати граф",
+    reframing: "Перефокусування теми...",
     aiInbox: "AI Inbox",
     proposals: "Пропозиції",
     loadingInbox: "Завантаження inbox...",
@@ -303,6 +397,7 @@ const UI_COPY = {
     selectTopic: "Оберіть тему",
     newTopic: "+ Нова тема",
     addPaper: "+ Додати paper",
+    editTopic: "Редагувати питання",
     deleting: "Видалення...",
     deleteTopic: "Видалити тему",
     graphIntro: "Новий аналіз створює пропозиції в AI Inbox. Об’єднайте підтверджені факти, потім знайдіть доказові зв’язки або перемкніться в ручний режим.",
@@ -310,17 +405,20 @@ const UI_COPY = {
     searchFindings: "Пошук фактів…",
     filterBySource: "Фільтр графа за джерелом",
     allSources: "Усі джерела",
-    minimumConfidence: "Мінімальна надійність факту",
-    anyConfidence: "Будь-яка надійність",
-    highConfidence: "Висока надійність · 85%+",
-    mediumConfidence: "Середня надійність · 65%+",
+    minimumConfidence: "Мінімальна впевненість AI",
+    anyConfidence: "Будь-яка впевненість AI",
+    highConfidence: "Висока впевненість AI · 85%+",
+    mediumConfidence: "Середня впевненість AI · 65%+",
+    highAiConfidence: "Висока",
+    mediumAiConfidence: "Середня",
+    lowAiConfidence: "Потрібна перевірка",
     focusedTopic: "Фокус: активна тема",
     focusTopic: "Фокус на активній темі",
     trail: "Траєкторія",
     reviewEdge: "Сократичний огляд",
     selected: "вибрано",
     group: "Групувати",
-    graphLegend: "Ціанова лінія = підтверджений AI-зв’язок · жовта пунктирна = потрібен огляд · фіолетова пунктирна = гіпотеза між темами · жовта лінія = сократичний огляд.",
+    graphLegend: "Ціанова лінія = підтверджений AI-зв’язок · жовта пунктирна = потрібен огляд · фіолетова пунктирна = непідтверджена гіпотеза · жовта лінія = сократичний огляд.",
     socraticCopilot: "Сократичний Co-Pilot",
     languageSetInIngestion: "Мова · задається в імпорті",
     magicLayout: "⚡ Магічне компонування",
@@ -346,20 +444,42 @@ const UI_COPY = {
     restore: (revision) => `Відновити r${revision}`,
     relationPath: "Шлях зв’язку",
     relationEvidence: "Доказ зв’язку · Strict Evidence Mapping",
+    sourceSideEvidence: "Доказ з боку початкового факту",
+    targetSideEvidence: "Доказ з боку цільового факту",
+    relationSupport: "AI-оцінка підтримки",
+    legacySupport: "Застарілий односторонній доказ",
     sourceEvidence: "Доказ джерела · Strict Evidence Mapping",
     noEvidence: "Докази відсутні.",
     page: "Сторінка",
     textSource: "Текстове джерело",
     character: "симв",
-    firewallReview: "Relation Firewall · Потрібен людський огляд",
-    aiSuggestion: "AI-пропозиції залишаються попередніми, доки ви не підтвердите їхнє мапування доказів.",
+    firewallReview: "Перевірка доказів зв’язку",
+    aiSuggestion: "AI-зв’язок потребує точних цитат з обох фактів. Недостатньо підтримані зв’язки залишаються гіпотезами й не можуть бути підтверджені.",
     pending: "очікує",
-    confidence: "Надійність",
+    confidence: "Впевненість AI",
+    queryRelevance: "Релевантність до запиту",
     notScored: "без оцінки",
     saving: "Збереження...",
     approveEvidence: "Підтвердити доказовий зв’язок",
     rejectLink: "Відхилити зв’язок",
     aiReasoning: "AI-обґрунтування",
+    evidenceQualityAudit: "Внутрішня перевірка доказів",
+    auditPending: "Не перевірено",
+    auditDescription: "Оцінює підтримку прив’язаним джерелом, обмеження та конкретні риторичні сигнали. Не перевіряє правдивість у реальному світі.",
+    auditEvidence: "Перевірити якість доказів",
+    auditingEvidence: "Перевірка доказів...",
+    auditCompleted: "Внутрішню перевірку доказів завершено. Вона оцінює підтримку джерелом, а не правдивість у реальному світі.",
+    claimSupport: "Підтримка твердження",
+    directSupport: "Пряма підтримка",
+    partialSupport: "Часткова підтримка",
+    insufficientSupport: "Недостатня підтримка",
+    evidenceStrength: "AI-оцінка сили доказів",
+    externalVerification: "Зовнішня перевірка",
+    notChecked: "Зовнішня перевірка не виконувалась",
+    limitations: "Обмеження",
+    manipulationSignals: "Ознаки маніпуляції",
+    noManipulationSignals: "У прив’язаних доказах не знайдено конкретних ознак маніпуляції.",
+    qualityAuditFailed: "Не вдалося виконати аудит якості доказів.",
     socraticQuestions: "Сократичні питання",
     proposedHypothesis: "Запропонована гіпотеза",
     noSelection: "Оберіть пропозицію в AI Inbox або підтверджений факт на полотні, щоб переглянути його стан Context Git.",
@@ -368,6 +488,10 @@ const UI_COPY = {
     waitForExtraction: "Дочекайтеся завершення витягування тексту з джерела.",
     fillResearchFields: "Заповніть активний запит і документ дослідження перед аналізом.",
     analysisFailed: "AI-аналіз не виконався.",
+    reframeFailed: "Не вдалося перефокусувати тему дослідження.",
+    topicNeedsVerifiedFacts: "Перед перефокусуванням об’єднайте щонайменше одну доказову пропозицію.",
+    topicReframed: (findings, relations) => `Питання дослідження оновлено. Переоцінено ${findings} підтверджених фактів і створено ${relations} пропозицій зв’язків для перевірки.`,
+    sourceAlreadyAnalyzed: "Цей самий документ уже було проаналізовано в активній темі дослідження.",
     topicDeleted: "Тему дослідження видалено. Попередню ревізію можна відновити в історії.",
     chooseTopic: "Спочатку виберіть тему дослідження для пошуку зв’язків.",
     noKeyForConnections: "Введіть OpenAI API key у Spotlight-імпорті перед пошуком зв’язків.",
@@ -398,15 +522,19 @@ const UI_COPY = {
     proposalCommitFailed: "Не вдалося об’єднати пропозицію з Workspace.",
     proposalMerged: "Факт об’єднано з Workspace. Об’єднайте щонайменше два факти в темі, щоб увімкнути пошук AI-зв’язків.",
     noConnections: "Між підтвердженими фактами не знайдено додаткових доказових зв’язків.",
-    discoveryCreated: (count) => `Створено ${count} кандидат${count === 1 ? "" : "ів"} доказових AI-зв’язків. Перевірте їх перед підтвердженням.`,
+    discoveryCreated: (count) => `Створено ${count} AI-пропозиці${count === 1 ? "ю зв’язку" : "ї зв’язків"}. Підтвердити можна лише кандидатів із двосторонніми доказами.`,
     connectionDiscoveryFailed: "Не вдалося знайти зв’язки між фактами.",
     aiApproveFailed: "Не вдалося підтвердити AI-доказовий зв’язок.",
     aiRejectFailed: "Не вдалося відхилити AI-доказовий зв’язок.",
     manualRelationFailed: "Не вдалося зберегти ручний зв’язок.",
+    manualFactsOnly: "Ручний семантичний зв’язок можна створити лише між двома підтвердженими Fact Nodes.",
+    savingManualLink: "Збереження ручного зв’язку...",
     checkoutFailed: "Не вдалося відновити ревізію.",
     importWithoutLinksNotice: "Джерело імпортовано без автоматичних AI-зв’язків відповідно до політики імпорту.",
     sourceFitNotice: (score, verdict) => `Відповідність джерела ${score}/100 (${verdict}), тому Flow-AI залишив факти окремо й не створив AI-зв’язків.`,
     noEvidenceMappedNotice: "AI повернув пропозиції, але жодна цитата не мапується назад на завантажене джерело. Джерело збережено; спробуйте сфокусованіший уривок або повторіть аналіз.",
+    retryableAnalysisNotice: "Жодна пропозиція не пройшла перевірку точної цитати. Джерело можна аналізувати повторно: уточніть запит або текст і запустіть його ще раз.",
+    chunkedAnalysisComplete: (count) => `Усе джерело проаналізовано в ${count} обмежених секціях і дедупліковано перед додаванням до AI Inbox.`,
     acceptedSkippedNotice: (accepted, skipped) => `Прийнято ${accepted} доказов${accepted === 1 ? "у пропозицію" : "их пропозицій"}; пропущено ${skipped} елемент${skipped === 1 ? "" : "ів"} без валідного доказу з джерела.`,
     analysisWarning: "Аналіз завершено з попередженням. Перевірте джерело та його відповідність темі.",
   },
@@ -462,6 +590,10 @@ const localizeBackendWarning = (warning, topicFit, copy) => {
     );
   }
 
+  if (warning.startsWith("AI returned no proposals")) {
+    return copy.retryableAnalysisNotice;
+  }
+
   if (warning.startsWith("AI returned proposals")) {
     return copy.noEvidenceMappedNotice;
   }
@@ -497,9 +629,34 @@ const RELATION_STATUS_COPY = {
 const formatRelationStatus = (status, language) =>
   RELATION_STATUS_COPY[language]?.[status] || status || "—";
 
+const formatClaimSupport = (support, copy) => {
+  if (support === "direct") return copy.directSupport;
+  if (support === "partial") return copy.partialSupport;
+  return copy.insufficientSupport;
+};
+
+const formatRelationSupport = (support, copy) => {
+  if (support === "direct") return copy.directSupport;
+  if (support === "partial") return copy.partialSupport;
+  if (support === "legacy") return copy.legacySupport;
+  if (support === "not_checked") return copy.notChecked;
+  return copy.insufficientSupport;
+};
+
 const FactNode = memo(function FactNode({ data, selected }) {
-  const confidenceScore = Number(data.finding.confidence_score);
-  const hasConfidenceScore = Number.isFinite(confidenceScore);
+  const rawConfidenceScore = data.finding.confidence_score;
+  const confidenceScore = Number(rawConfidenceScore);
+  const hasConfidenceScore =
+    rawConfidenceScore !== null &&
+    rawConfidenceScore !== undefined &&
+    Number.isFinite(confidenceScore);
+  const rawRelevanceScore = data.finding.query_relevance_score;
+  const relevanceScore = Number(rawRelevanceScore);
+  const hasRelevanceScore =
+    rawRelevanceScore !== null &&
+    rawRelevanceScore !== undefined &&
+    Number.isFinite(relevanceScore);
+  const evidenceAudit = data.finding.quality_audit;
 
   return (
     <div
@@ -528,9 +685,35 @@ const FactNode = memo(function FactNode({ data, selected }) {
         {data.finding.title}
       </p>
       <div className="mt-3 flex items-center justify-between gap-2 text-[10px] font-bold uppercase tracking-wide">
-        <span className="text-slate-500">{data.copy.evidenceConfidence}</span>
+        <span className="text-slate-500">{data.copy.aiConfidence}</span>
         <span className={hasConfidenceScore && confidenceScore >= 85 ? "text-emerald-300" : hasConfidenceScore && confidenceScore >= 65 ? "text-cyan-300" : "text-slate-400"}>
           {hasConfidenceScore ? `${confidenceScore}%` : data.copy.unscored}
+        </span>
+      </div>
+      {hasRelevanceScore && (
+        <div className="mt-1.5 flex items-center justify-between gap-2 text-[10px] font-bold uppercase tracking-wide">
+          <span className="text-slate-500">{data.copy.queryRelevance}</span>
+          <span className={relevanceScore >= 80 ? "text-cyan-300" : relevanceScore >= 50 ? "text-violet-300" : "text-slate-400"}>
+            {relevanceScore}%
+          </span>
+        </div>
+      )}
+      <div className="mt-1.5 flex items-center justify-between gap-2 text-[10px] font-bold uppercase tracking-wide">
+        <span className="text-slate-500">{data.copy.evidenceQualityAudit}</span>
+        <span
+          className={
+            evidenceAudit?.claim_support === "direct"
+              ? "text-emerald-300"
+              : evidenceAudit?.claim_support === "partial"
+                ? "text-amber-300"
+                : evidenceAudit?.claim_support === "insufficient"
+                  ? "text-rose-300"
+                  : "text-slate-500"
+          }
+        >
+          {evidenceAudit
+            ? formatClaimSupport(evidenceAudit.claim_support, data.copy)
+            : data.copy.auditPending}
         </span>
       </div>
       <Handle
@@ -708,21 +891,14 @@ function TopBar({
   activeMode,
   setActiveMode,
   layoutMode,
-  setLayoutMode,
   onLayoutChange,
   onOpenIngest,
   onRunCopilot,
   onMagicLayout,
-  onDownloadReport,
   isReviewing,
   error,
   notice,
 }) {
-  const modes = [
-    { id: "manual", label: copy.manual },
-    { id: "review", label: copy.review },
-    { id: "magic", label: copy.magic },
-  ];
   const layoutOptions = [
     { id: "graph", label: copy.graph },
     { id: "tree", label: copy.tree },
@@ -730,26 +906,32 @@ function TopBar({
     { id: "comparison", label: copy.compare },
   ];
 
-  const handleModeChange = (mode) => {
-    setActiveMode(mode);
+  const enableManualEditing = () => {
+    setActiveMode("manual");
+  };
 
-    if (mode === "review") {
-      onRunCopilot();
-    }
-
-    if (mode === "magic") {
-      onMagicLayout();
+  const runReview = async () => {
+    setActiveMode("review");
+    try {
+      await onRunCopilot();
+    } finally {
+      setActiveMode("manual");
     }
   };
 
+  const runMagicLayout = () => {
+    setActiveMode("magic");
+    onMagicLayout();
+    window.setTimeout(() => setActiveMode("manual"), 350);
+  };
+
   const changeLayout = (mode) => {
-    setLayoutMode(mode);
     onLayoutChange(mode);
   };
 
   return (
     <header className="border-b border-slate-800 bg-[#0B1120]/95 px-4 py-3 backdrop-blur-xl sm:px-6">
-      <div className="mx-auto flex max-w-[1920px] flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+      <div className="mx-auto grid max-w-[1920px] gap-4 xl:grid-cols-[1fr_auto_1fr] xl:items-center">
         <button
           type="button"
           onClick={onOpenIngest}
@@ -775,20 +957,44 @@ function TopBar({
             role="group"
             aria-label={copy.workspaceMode}
           >
-            {modes.map((mode) => (
-              <button
-                key={mode.id}
-                type="button"
-                onClick={() => handleModeChange(mode.id)}
-                className={`rounded-lg px-3 py-2 text-xs font-bold transition ${
-                  activeMode === mode.id
-                    ? "border border-slate-600 bg-slate-800 text-cyan-300 shadow-inner"
-                    : "border border-transparent text-slate-500 hover:text-slate-200"
-                }`}
-              >
-                {mode.label}
-              </button>
-            ))}
+            <button
+              type="button"
+              onClick={enableManualEditing}
+              aria-pressed={activeMode === "manual"}
+              className={`rounded-lg px-3 py-2 text-xs font-bold transition ${
+                activeMode === "manual"
+                  ? "border border-slate-600 bg-slate-800 text-cyan-300 shadow-inner"
+                  : "border border-transparent text-slate-500 hover:text-slate-200"
+              }`}
+            >
+              {copy.manualEdit}
+            </button>
+            <span aria-hidden="true" className="mx-1 my-1 w-px bg-slate-700" />
+            <button
+              type="button"
+              onClick={runReview}
+              disabled={isReviewing}
+              aria-pressed={activeMode === "review"}
+              className={`rounded-lg border px-3 py-2 text-xs font-bold transition disabled:cursor-not-allowed disabled:opacity-50 ${
+                activeMode === "review"
+                  ? "border-yellow-400/60 bg-yellow-400/15 text-yellow-200"
+                  : "border-transparent text-slate-400 hover:border-yellow-400/35 hover:bg-yellow-400/10 hover:text-yellow-200"
+              }`}
+            >
+              {copy.runReviewAction}
+            </button>
+            <button
+              type="button"
+              onClick={runMagicLayout}
+              aria-pressed={activeMode === "magic"}
+              className={`rounded-lg border px-3 py-2 text-xs font-bold transition ${
+                activeMode === "magic"
+                  ? "border-violet-400/60 bg-violet-400/15 text-violet-200"
+                  : "border-transparent text-slate-400 hover:border-violet-400/35 hover:bg-violet-400/10 hover:text-violet-200"
+              }`}
+            >
+              {copy.autoArrangeAction}
+            </button>
           </div>
 
           <div
@@ -813,23 +1019,7 @@ function TopBar({
           </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2 xl:justify-end">
-          <button
-            type="button"
-            onClick={onRunCopilot}
-            disabled={isReviewing}
-            className="rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 px-4 py-2.5 text-sm font-extrabold text-white shadow-lg shadow-cyan-950/40 transition hover:from-cyan-400 hover:to-blue-500 disabled:cursor-not-allowed disabled:opacity-60"
-          >
-              {isReviewing ? copy.copilotThinking : copy.runCopilot}
-          </button>
-          <button
-            type="button"
-            onClick={onDownloadReport}
-            className="rounded-xl border border-slate-700 bg-[#0f172a] px-4 py-2.5 text-sm font-bold text-slate-200 transition hover:border-cyan-400/70 hover:text-cyan-300"
-          >
-            {copy.exportReport}
-          </button>
-        </div>
+        <div className="hidden xl:block" aria-hidden="true" />
       </div>
       {error && (
         <div className="mx-auto mt-3 max-w-[1920px] rounded-lg border border-rose-500/50 bg-rose-500/10 px-3 py-2 text-sm text-rose-200">
@@ -849,7 +1039,7 @@ function IngestResearchModal({
   copy,
   isOpen,
   ingestMode,
-  activeTopicTitle,
+  activeTopic,
   query,
   setQuery,
   text,
@@ -878,6 +1068,9 @@ function IngestResearchModal({
 }) {
   const hasSessionApiKey = Boolean(apiKey.trim());
   const canUseOpenAi = hasSessionApiKey || isOpenAiConfigured;
+  const sourceCharacterCount = text.length;
+  const estimatedAnalysisChunks = estimateAnalysisChunks(sourceCharacterCount);
+  const sourceExceedsSafeLimit = sourceCharacterCount > MAX_ANALYSIS_CHARACTERS;
 
   const handleFileUpload = (event) => {
     const file = event.target.files?.[0];
@@ -899,11 +1092,7 @@ function IngestResearchModal({
     reader.onload = () => {
       const uploadedText = typeof reader.result === "string" ? reader.result : "";
 
-      setText((currentText) =>
-        currentText.trim()
-          ? `${currentText.trim()}\n\n${uploadedText}`
-          : uploadedText
-      );
+      setText(uploadedText);
       setSourcePageCount(0);
       event.target.value = "";
     };
@@ -914,264 +1103,308 @@ function IngestResearchModal({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-950/40 p-2 backdrop-blur-md sm:items-center sm:p-4">
+    <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-slate-950/55 p-3 backdrop-blur-md sm:p-6">
       <section
-        className="my-auto flex max-h-[calc(100dvh-1rem)] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-cyan-400/25 bg-[#0f172a]/95 p-4 shadow-2xl shadow-cyan-950/50 sm:max-h-[calc(100dvh-2rem)] sm:p-7"
+        className="my-auto flex max-h-[calc(100dvh-1.5rem)] w-full max-w-6xl flex-col overflow-hidden rounded-2xl border border-cyan-400/25 bg-[#0f172a]/[.98] shadow-2xl shadow-cyan-950/50 sm:max-h-[calc(100dvh-3rem)]"
         role="dialog"
         aria-modal="true"
         aria-labelledby="ingest-modal-title"
       >
-        <div className="flex shrink-0 items-start justify-between gap-5">
-          <div>
+        <div className="flex shrink-0 items-start justify-between gap-5 border-b border-slate-800/90 px-5 py-4 sm:px-7 sm:py-5">
+          <div className="min-w-0">
             <p className="text-[10px] font-extrabold uppercase tracking-[0.2em] text-cyan-400">
-            {copy.spotlight}
+              {copy.spotlight}
             </p>
-            <h2 id="ingest-modal-title" className="mt-2 text-2xl font-bold text-white">
+            <h2 id="ingest-modal-title" className="mt-1.5 text-xl font-bold text-white sm:text-2xl">
               {ingestMode === "source"
-                ? copy.addEvidenceTo(activeTopicTitle)
-                : copy.startNewTopic}
+                ? copy.addEvidenceTo(activeTopic?.title)
+                : ingestMode === "edit"
+                  ? copy.editTopicTitle(activeTopic?.title)
+                  : copy.startNewTopic}
             </h2>
-            <p className="mt-2 text-sm leading-6 text-slate-400">
+            <p className="mt-1.5 max-w-3xl text-xs leading-5 text-slate-400 sm:text-sm sm:leading-6">
               {ingestMode === "source"
                 ? copy.importEvidenceDescription
-                : copy.newTopicDescription}
+                : ingestMode === "edit"
+                  ? copy.editTopicDescription
+                  : copy.newTopicDescription}
             </p>
           </div>
           <button
             type="button"
             onClick={onClose}
-            className="rounded-lg px-2 py-1 text-xl leading-none text-slate-500 transition hover:bg-slate-800 hover:text-slate-100"
+            className="shrink-0 rounded-lg px-2 py-1 text-xl leading-none text-slate-500 transition hover:bg-slate-800 hover:text-slate-100"
             aria-label={copy.close}
           >
             ×
           </button>
         </div>
 
-        {error && (
-          <div className="mt-4 shrink-0 rounded-xl border border-rose-400/45 bg-rose-950/35 px-3 py-2.5 text-sm font-medium text-rose-100">
-            {error}
-          </div>
-        )}
-        {notice && (
-          <div className="mt-4 shrink-0 rounded-xl border border-cyan-400/35 bg-cyan-400/10 px-3 py-2.5 text-sm font-medium text-cyan-100">
-            {notice}
-          </div>
-        )}
-
-        <div className="mt-5 min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain pr-1 sm:mt-6 sm:pr-2">
-          <section className="rounded-xl border border-violet-400/30 bg-violet-400/5 p-3">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <div>
-                <p className="text-xs font-extrabold uppercase tracking-[0.16em] text-violet-300">
-                  {copy.sessionKey}
-                </p>
-                <p className="mt-1 text-xs leading-5 text-slate-400">
-                  {hasSessionApiKey
-                    ? copy.sessionReadyDescription
-                    : isOpenAiConfigured
-                      ? copy.backendReadyDescription
-                      : copy.keyRequiredDescription}
-                </p>
-              </div>
-              <span
-                className={`rounded-full px-2 py-1 text-[10px] font-extrabold uppercase tracking-[0.14em] ${
-                  canUseOpenAi
-                    ? "bg-emerald-400/15 text-emerald-300"
-                    : "bg-amber-400/15 text-amber-300"
-                }`}
-              >
-                {hasSessionApiKey
-                  ? copy.sessionReady
-                  : isOpenAiConfigured
-                    ? copy.backendReady
-                    : copy.keyRequired}
-              </span>
-            </div>
-            <div className="mt-3">
-              <input
-                type="password"
-                value={apiKey}
-                onChange={(event) => setApiKey(event.target.value)}
-                placeholder="sk-..."
-                autoComplete="off"
-                spellCheck="false"
-                className="min-w-0 flex-1 rounded-lg border border-slate-700 bg-slate-950 px-3 py-2.5 text-sm text-slate-100 outline-none transition placeholder:text-slate-600 focus:border-violet-400 focus:ring-2 focus:ring-violet-400/20"
-              />
-            </div>
-            {ingestMode === "topic" && (
-              <div className="mt-3 flex flex-col gap-2 border-t border-violet-400/15 pt-3 sm:flex-row sm:items-center sm:justify-between">
-                <p className="text-xs leading-5 text-slate-500">
-                  {copy.freshRunHint}
-                </p>
-                <button
-                  type="button"
-                  onClick={onStartFreshWorkspace}
-                  disabled={isResettingWorkspace || isAnalyzing}
-                  className="shrink-0 rounded-lg border border-rose-400/55 bg-rose-400/10 px-3 py-2 text-xs font-extrabold text-rose-200 transition hover:bg-rose-400 hover:text-slate-950 disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  {isResettingWorkspace ? copy.clearing : copy.startFresh}
-                </button>
+        {(error || notice) && (
+          <div className="shrink-0 space-y-2 px-5 pt-4 sm:px-7">
+            {error && (
+              <div className="rounded-xl border border-rose-400/45 bg-rose-950/35 px-3 py-2.5 text-sm font-medium text-rose-100">
+                {error}
               </div>
             )}
-          </section>
-
-          <section className="rounded-xl border border-cyan-400/35 bg-cyan-400/5 p-4">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <div>
-                <p className="text-xs font-extrabold uppercase tracking-[0.16em] text-cyan-300">
-                  {copy.responseLanguage}
-                </p>
-                <p className="mt-1 text-xs leading-5 text-slate-400">
-                  {copy.responseLanguageDescription}
-                </p>
+            {notice && (
+              <div className="rounded-xl border border-cyan-400/35 bg-cyan-400/10 px-3 py-2.5 text-sm font-medium text-cyan-100">
+                {notice}
               </div>
-              <span className="rounded-full border border-cyan-400/25 bg-slate-950/60 px-2 py-1 text-[10px] font-extrabold uppercase tracking-[0.14em] text-cyan-200">
-                {targetLang === "uk" ? copy.ukrainian : targetLang === "en" ? copy.english : copy.auto}
-              </span>
-            </div>
-            <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-3">
-              {[
-                { value: "auto", label: copy.auto, description: copy.sourceLanguage },
-                { value: "en", label: copy.english, description: copy.englishOutput },
-                { value: "uk", label: copy.ukrainian, description: copy.ukrainianOutput },
-              ].map((language) => (
-                <button
-                  key={language.value}
-                  type="button"
-                  onClick={() => setTargetLang(language.value)}
-                  className={`rounded-xl border px-3 py-3 text-left transition ${
-                    targetLang === language.value
-                      ? "border-cyan-300 bg-cyan-400 text-slate-950"
-                      : "border-slate-700 bg-slate-950/70 text-slate-300 hover:border-cyan-400/60"
-                  }`}
-                >
-                  <span className="block text-sm font-extrabold">{language.label}</span>
-                  <span className={`mt-1 block text-[11px] font-medium ${
-                    targetLang === language.value ? "text-slate-800" : "text-slate-500"
-                  }`}>
-                    {language.description}
-                  </span>
-                </button>
-              ))}
-            </div>
-          </section>
+            )}
+          </div>
+        )}
 
-          {ingestMode === "source" && (
-            <section className="rounded-xl border border-yellow-400/30 bg-yellow-400/5 p-4">
-              <p className="text-xs font-extrabold uppercase tracking-[0.16em] text-yellow-300">
-                {copy.firewallPolicy}
-              </p>
-              <p className="mt-1 text-xs leading-5 text-slate-400">
-                {copy.firewallDescription}
-              </p>
-              <div className="mt-3 grid gap-2 sm:grid-cols-3">
-                {[
-                  {
-                    value: "smart",
-                    label: copy.smartFirewall,
-                    description: copy.smartFirewallDescription,
-                  },
-                  {
-                    value: "isolate_uncertain",
-                    label: copy.isolateUncertain,
-                    description: copy.isolateUncertainDescription,
-                  },
-                  {
-                    value: "import_without_links",
-                    label: copy.importWithoutLinks,
-                    description: copy.importWithoutLinksDescription,
-                  },
-                ].map((policy) => (
-                  <button
-                    key={policy.value}
-                    type="button"
-                    onClick={() => setSourcePolicy(policy.value)}
-                    className={`rounded-xl border px-3 py-3 text-left transition ${
-                      sourcePolicy === policy.value
-                        ? "border-yellow-300 bg-yellow-400 text-slate-950"
-                        : "border-slate-700 bg-slate-950/70 text-slate-300 hover:border-yellow-300/70"
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 py-4 sm:px-7 sm:py-5">
+          <div className="grid gap-4 lg:grid-cols-[minmax(0,1.15fr)_minmax(320px,0.85fr)] lg:items-start">
+            <div className="space-y-4">
+              <label className="block rounded-xl border border-cyan-400/20 bg-cyan-400/[.03] p-4">
+                <span className="text-xs font-extrabold uppercase tracking-[0.16em] text-slate-300">
+                  {copy.activeQuery}
+                </span>
+                <input
+                  type="text"
+                  ref={spotlightInputRef}
+                  value={query}
+                  onChange={(event) => setQuery(event.target.value)}
+                  placeholder={copy.queryPlaceholder}
+                  autoFocus
+                  className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-sm text-slate-100 outline-none transition placeholder:text-slate-600 focus:border-cyan-400 focus:ring-2 focus:ring-cyan-400/20"
+                />
+              </label>
+
+              {ingestMode === "edit" && (
+                <section className="rounded-xl border border-cyan-400/30 bg-cyan-400/5 p-4">
+                  <p className="text-xs font-extrabold uppercase tracking-[0.16em] text-cyan-300">
+                    {copy.existingKnowledgeBase}
+                  </p>
+                  <p className="mt-2 text-sm leading-6 text-slate-300">
+                    {copy.reframeScope(
+                      activeTopic?.source_count,
+                      activeTopic?.finding_count
+                    )}
+                  </p>
+                </section>
+              )}
+
+              {ingestMode !== "edit" && (
+                <>
+              <label className="block rounded-xl border border-slate-800 bg-slate-950/25 p-4">
+                <span className="text-xs font-extrabold uppercase tracking-[0.16em] text-slate-400">
+                  {copy.sourcePaperTitle}
+                </span>
+                <input
+                  type="text"
+                  value={sourceTitle}
+                  onChange={(event) => setSourceTitle(event.target.value)}
+                  placeholder={copy.sourceTitlePlaceholder}
+                  className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-sm text-slate-100 outline-none transition placeholder:text-slate-600 focus:border-cyan-400 focus:ring-2 focus:ring-cyan-400/20"
+                />
+              </label>
+
+              <label className="block rounded-xl border border-slate-800 bg-slate-950/25 p-4">
+                <span className="text-xs font-extrabold uppercase tracking-[0.16em] text-slate-400">
+                  {copy.researchDocument}
+                </span>
+                <textarea
+                  value={text}
+                  onChange={(event) => setText(event.target.value)}
+                  placeholder={copy.documentPlaceholder}
+                  className="mt-2 h-44 min-h-44 w-full resize-y rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-sm leading-6 text-slate-100 outline-none transition placeholder:text-slate-600 focus:border-cyan-400 focus:ring-2 focus:ring-cyan-400/20 sm:h-52 sm:min-h-52"
+                />
+                {sourceCharacterCount > 0 && (
+                  <span
+                    className={`mt-2 block text-xs font-semibold ${
+                      sourceExceedsSafeLimit ? "text-rose-300" : "text-cyan-300/80"
                     }`}
                   >
-                    <span className="block text-xs font-extrabold">{policy.label}</span>
-                    <span className={`mt-1 block text-[10px] leading-4 ${
-                      sourcePolicy === policy.value ? "text-slate-800" : "text-slate-500"
-                    }`}>
-                      {policy.description}
-                    </span>
-                  </button>
-                ))}
-              </div>
-            </section>
-          )}
+                    {sourceExceedsSafeLimit
+                      ? copy.sourceTooLarge(MAX_ANALYSIS_CHARACTERS)
+                      : copy.documentAnalysisPlan(
+                          sourceCharacterCount,
+                          estimatedAnalysisChunks
+                        )}
+                  </span>
+                )}
+              </label>
 
-          <label className="block">
-            <span className="text-xs font-extrabold uppercase tracking-[0.16em] text-slate-400">
-              {copy.activeQuery}
-            </span>
-            <input
-              type="text"
-              ref={spotlightInputRef}
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              placeholder={copy.queryPlaceholder}
-              autoFocus
-              className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-sm text-slate-100 outline-none transition placeholder:text-slate-600 focus:border-cyan-400 focus:ring-2 focus:ring-cyan-400/20"
-            />
-          </label>
+              <label className="block rounded-xl border border-dashed border-cyan-400/35 bg-cyan-400/5 p-4 transition hover:border-cyan-400/70 hover:bg-cyan-400/10">
+                <span className="block text-xs font-extrabold uppercase tracking-[0.16em] text-cyan-300">
+                  {copy.importSource}
+                </span>
+                <span className="mt-1 block text-xs leading-5 text-slate-500">
+                  {copy.importDescription}
+                </span>
+                <input
+                  type="file"
+                  accept=".pdf,.docx,.txt,.md,.csv,.tsv,.json,.log"
+                  onChange={handleFileUpload}
+                  disabled={isAnalyzing || isExtractingSource}
+                  className="mt-3 block w-full cursor-pointer rounded-lg border border-slate-700 bg-slate-950 text-xs text-slate-400 file:mr-3 file:cursor-pointer file:border-0 file:bg-cyan-400 file:px-3 file:py-2 file:text-xs file:font-extrabold file:text-slate-950 hover:file:bg-cyan-300 disabled:cursor-not-allowed disabled:opacity-60"
+                />
+                {isExtractingSource && (
+                  <span className="mt-2 block text-xs font-semibold text-cyan-300">
+                    {copy.extracting}
+                  </span>
+                )}
+                {!isExtractingSource && sourcePageCount > 0 && (
+                  <span className="mt-2 block text-xs font-semibold text-emerald-300">
+                    {copy.pagesReady(sourcePageCount)}
+                  </span>
+                )}
+              </label>
+                </>
+              )}
+            </div>
 
-          <label className="block">
-            <span className="text-xs font-extrabold uppercase tracking-[0.16em] text-slate-400">
-              {copy.sourcePaperTitle}
-            </span>
-            <input
-              type="text"
-              value={sourceTitle}
-              onChange={(event) => setSourceTitle(event.target.value)}
-              placeholder={copy.sourceTitlePlaceholder}
-              className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-sm text-slate-100 outline-none transition placeholder:text-slate-600 focus:border-cyan-400 focus:ring-2 focus:ring-cyan-400/20"
-            />
-          </label>
+            <div className="space-y-4">
+              <section className="rounded-xl border border-violet-400/30 bg-violet-400/5 p-4">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <p className="text-xs font-extrabold uppercase tracking-[0.16em] text-violet-300">
+                      {copy.sessionKey}
+                    </p>
+                    <p className="mt-1 text-xs leading-5 text-slate-400">
+                      {hasSessionApiKey
+                        ? copy.sessionReadyDescription
+                        : isOpenAiConfigured
+                          ? copy.backendReadyDescription
+                          : copy.keyRequiredDescription}
+                    </p>
+                  </div>
+                  <span
+                    className={`rounded-full px-2 py-1 text-[10px] font-extrabold uppercase tracking-[0.14em] ${
+                      canUseOpenAi
+                        ? "bg-emerald-400/15 text-emerald-300"
+                        : "bg-amber-400/15 text-amber-300"
+                    }`}
+                  >
+                    {hasSessionApiKey
+                      ? copy.sessionReady
+                      : isOpenAiConfigured
+                        ? copy.backendReady
+                        : copy.keyRequired}
+                  </span>
+                </div>
+                <input
+                  type="password"
+                  value={apiKey}
+                  onChange={(event) => setApiKey(event.target.value)}
+                  placeholder="sk-..."
+                  autoComplete="off"
+                  spellCheck="false"
+                  className="mt-3 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2.5 text-sm text-slate-100 outline-none transition placeholder:text-slate-600 focus:border-violet-400 focus:ring-2 focus:ring-violet-400/20"
+                />
+                {ingestMode === "topic" && (
+                  <div className="mt-3 border-t border-violet-400/15 pt-3">
+                    <p className="text-xs leading-5 text-slate-500">
+                      {copy.freshRunHint}
+                    </p>
+                    <button
+                      type="button"
+                      onClick={onStartFreshWorkspace}
+                      disabled={isResettingWorkspace || isAnalyzing}
+                      className="mt-2 w-full rounded-lg border border-rose-400/55 bg-rose-400/10 px-3 py-2 text-xs font-extrabold text-rose-200 transition hover:bg-rose-400 hover:text-slate-950 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      {isResettingWorkspace ? copy.clearing : copy.startFresh}
+                    </button>
+                  </div>
+                )}
+              </section>
 
-          <label className="block">
-            <span className="text-xs font-extrabold uppercase tracking-[0.16em] text-slate-400">
-              {copy.researchDocument}
-            </span>
-            <textarea
-              value={text}
-              onChange={(event) => setText(event.target.value)}
-              placeholder={copy.documentPlaceholder}
-              className="mt-2 h-40 min-h-40 w-full resize-y rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-sm leading-6 text-slate-100 outline-none transition placeholder:text-slate-600 focus:border-cyan-400 focus:ring-2 focus:ring-cyan-400/20 sm:h-52 sm:min-h-52"
-            />
-          </label>
+              <section className="rounded-xl border border-cyan-400/35 bg-cyan-400/5 p-4">
+                <div className="flex items-center justify-between gap-2">
+                  <div>
+                    <p className="text-xs font-extrabold uppercase tracking-[0.16em] text-cyan-300">
+                      {copy.responseLanguage}
+                    </p>
+                    <p className="mt-1 text-xs leading-5 text-slate-400">
+                      {copy.responseLanguageDescription}
+                    </p>
+                  </div>
+                  <span className="rounded-full border border-cyan-400/25 bg-slate-950/60 px-2 py-1 text-[10px] font-extrabold uppercase tracking-[0.14em] text-cyan-200">
+                    {targetLang === "uk" ? copy.ukrainian : targetLang === "en" ? copy.english : copy.auto}
+                  </span>
+                </div>
+                <div className="mt-3 grid grid-cols-3 gap-2">
+                  {[
+                    { value: "auto", label: copy.auto, description: copy.sourceLanguage },
+                    { value: "en", label: copy.english, description: copy.englishOutput },
+                    { value: "uk", label: copy.ukrainian, description: copy.ukrainianOutput },
+                  ].map((language) => (
+                    <button
+                      key={language.value}
+                      type="button"
+                      onClick={() => setTargetLang(language.value)}
+                      className={`min-h-20 rounded-xl border px-2.5 py-2.5 text-left transition sm:px-3 ${
+                        targetLang === language.value
+                          ? "border-cyan-300 bg-cyan-400 text-slate-950"
+                          : "border-slate-700 bg-slate-950/70 text-slate-300 hover:border-cyan-400/60"
+                      }`}
+                    >
+                      <span className="block text-xs font-extrabold sm:text-sm">{language.label}</span>
+                      <span className={`mt-1 block text-[10px] font-medium leading-4 ${
+                        targetLang === language.value ? "text-slate-800" : "text-slate-500"
+                      }`}>
+                        {language.description}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </section>
 
-          <label className="block rounded-xl border border-dashed border-cyan-400/35 bg-cyan-400/5 p-3 transition hover:border-cyan-400/70 hover:bg-cyan-400/10">
-            <span className="block text-xs font-extrabold uppercase tracking-[0.16em] text-cyan-300">
-              {copy.importSource}
-            </span>
-            <span className="mt-1 block text-xs leading-5 text-slate-500">
-              {copy.importDescription}
-            </span>
-            <input
-              type="file"
-              accept=".pdf,.docx,.txt,.md,.csv,.tsv,.json,.log"
-              onChange={handleFileUpload}
-              disabled={isAnalyzing || isExtractingSource}
-              className="mt-3 block w-full cursor-pointer rounded-lg border border-slate-700 bg-slate-950 text-xs text-slate-400 file:mr-3 file:cursor-pointer file:border-0 file:bg-cyan-400 file:px-3 file:py-2 file:text-xs file:font-extrabold file:text-slate-950 hover:file:bg-cyan-300 disabled:cursor-not-allowed disabled:opacity-60"
-            />
-            {isExtractingSource && (
-              <span className="mt-2 block text-xs font-semibold text-cyan-300">
-                {copy.extracting}
-              </span>
-            )}
-            {!isExtractingSource && sourcePageCount > 0 && (
-              <span className="mt-2 block text-xs font-semibold text-emerald-300">
-                {copy.pagesReady(sourcePageCount)}
-              </span>
-            )}
-          </label>
+              {ingestMode === "source" && (
+                <section className="rounded-xl border border-yellow-400/30 bg-yellow-400/5 p-4">
+                  <p className="text-xs font-extrabold uppercase tracking-[0.16em] text-yellow-300">
+                    {copy.firewallPolicy}
+                  </p>
+                  <p className="mt-1 text-xs leading-5 text-slate-400">
+                    {copy.firewallDescription}
+                  </p>
+                  <div className="mt-3 grid grid-cols-3 gap-2">
+                    {[
+                      {
+                        value: "smart",
+                        label: copy.smartFirewall,
+                        description: copy.smartFirewallDescription,
+                      },
+                      {
+                        value: "isolate_uncertain",
+                        label: copy.isolateUncertain,
+                        description: copy.isolateUncertainDescription,
+                      },
+                      {
+                        value: "import_without_links",
+                        label: copy.importWithoutLinks,
+                        description: copy.importWithoutLinksDescription,
+                      },
+                    ].map((policy) => (
+                      <button
+                        key={policy.value}
+                        type="button"
+                        onClick={() => setSourcePolicy(policy.value)}
+                        className={`min-h-24 rounded-xl border px-2.5 py-2.5 text-left transition sm:px-3 ${
+                          sourcePolicy === policy.value
+                            ? "border-yellow-300 bg-yellow-400 text-slate-950"
+                            : "border-slate-700 bg-slate-950/70 text-slate-300 hover:border-yellow-300/70"
+                        }`}
+                      >
+                        <span className="block text-[11px] font-extrabold leading-4">{policy.label}</span>
+                        <span className={`mt-1 block text-[10px] leading-4 ${
+                          sourcePolicy === policy.value ? "text-slate-800" : "text-slate-500"
+                        }`}>
+                          {policy.description}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                </section>
+              )}
+            </div>
+          </div>
         </div>
 
-        <div className="mt-4 flex shrink-0 flex-col-reverse gap-3 border-t border-slate-800 pt-4 sm:mt-6 sm:flex-row sm:items-center sm:justify-end">
+        <div className="flex shrink-0 flex-col-reverse gap-3 border-t border-slate-800 bg-slate-950/20 px-5 py-4 sm:flex-row sm:items-center sm:justify-end sm:px-7">
           <button
             type="button"
             onClick={onClose}
@@ -1183,14 +1416,20 @@ function IngestResearchModal({
           <button
             type="button"
             onClick={onAnalyze}
-            disabled={isAnalyzing || isExtractingSource}
+            disabled={
+              isAnalyzing ||
+              isExtractingSource ||
+              (ingestMode !== "edit" && sourceExceedsSafeLimit)
+            }
             className="rounded-xl bg-gradient-to-r from-cyan-400 to-blue-500 px-5 py-3 text-sm font-extrabold text-slate-950 shadow-lg shadow-cyan-950/40 transition hover:from-cyan-300 hover:to-blue-400 disabled:cursor-not-allowed disabled:opacity-60"
           >
             {isAnalyzing
-              ? copy.analyzing
+              ? ingestMode === "edit" ? copy.reframing : copy.analyzing
               : ingestMode === "source"
                 ? copy.analyzeSource
-                : copy.analyzeResearch}
+                : ingestMode === "edit"
+                  ? copy.reframeTopic
+                  : copy.analyzeResearch}
           </button>
         </div>
       </section>
@@ -1207,14 +1446,16 @@ const nodeTypes = {
 
 const readError = async (response, fallback) => {
   try {
-    await response.json();
-    return fallback;
+    const payload = await response.json();
+    return typeof payload?.detail === "string" && payload.detail.trim()
+      ? payload.detail.trim()
+      : fallback;
   } catch {
     return fallback;
   }
 };
 
-const getEvidence = (item, isDraft) => {
+const getEvidence = (item, isDraft, copy) => {
   if (!item) return [];
 
   if (isDraft && item.proposed_hypothesis?.evidence) {
@@ -1225,6 +1466,25 @@ const getEvidence = (item, isDraft) => {
         quote: item.proposed_hypothesis.evidence,
       },
     ];
+  }
+
+  if (item.source_evidence || item.target_evidence) {
+    return [
+      item.source_evidence
+        ? {
+            id: "source-relation-evidence",
+            title: copy.sourceSideEvidence,
+            quote: item.source_evidence,
+          }
+        : null,
+      item.target_evidence
+        ? {
+            id: "target-relation-evidence",
+            title: copy.targetSideEvidence,
+            quote: item.target_evidence,
+          }
+        : null,
+    ].filter(Boolean);
   }
 
   if (Array.isArray(item.evidence)) {
@@ -1240,22 +1500,26 @@ const getEvidence = (item, isDraft) => {
 
 const getConfidenceScore = (proposal) => {
   const score = proposal.confidence_score;
-  return Number.isFinite(Number(score)) ? Number(score) : "—";
+  return score !== null && score !== undefined && Number.isFinite(Number(score))
+    ? Number(score)
+    : "—";
 };
 
-const getConfidenceTier = (item) => {
-  const score = Number(item?.confidence_score);
+const getConfidenceTier = (item, copy) => {
+  const rawScore = item?.confidence_score;
+  const score = Number(rawScore);
 
-  if (!Number.isFinite(score)) {
-    return { label: "Unscored", className: "text-slate-500" };
+  if (rawScore === null || rawScore === undefined || !Number.isFinite(score)) {
+    return { label: copy.unscored, className: "text-slate-500" };
   }
+
   if (score >= 85) {
-    return { label: "High", className: "text-emerald-300" };
+    return { label: copy.highAiConfidence, className: "text-emerald-300" };
   }
   if (score >= 65) {
-    return { label: "Medium", className: "text-cyan-300" };
+    return { label: copy.mediumAiConfidence, className: "text-cyan-300" };
   }
-  return { label: "Needs review", className: "text-amber-300" };
+  return { label: copy.lowAiConfidence, className: "text-amber-300" };
 };
 
 const GRAPH_UI_STORAGE_KEY = "flow-ai-graph-ui-v5";
@@ -1315,43 +1579,6 @@ const getAbsoluteNodePosition = (nodes, nodeId) => {
   return { x, y };
 };
 
-const getAbsolutePositionFromChange = (nodes, nodeId, change) => {
-  if (isUsablePosition(change.positionAbsolute)) {
-    return {
-      x: Number(change.positionAbsolute.x),
-      y: Number(change.positionAbsolute.y),
-    };
-  }
-
-  if (!isUsablePosition(change.position)) {
-    return null;
-  }
-
-  const nodeById = new Map(nodes.map((node) => [node.id, node]));
-  let currentNode = nodeById.get(nodeId);
-  let x = Number(change.position.x);
-  let y = Number(change.position.y);
-  const visited = new Set();
-
-  while (currentNode?.parentId && !visited.has(currentNode.id)) {
-    visited.add(currentNode.id);
-    const parentNode = nodeById.get(currentNode.parentId);
-
-    if (!parentNode || !isUsablePosition(parentNode.position)) {
-      break;
-    }
-
-    x += Number(parentNode.position.x);
-    y += Number(parentNode.position.y);
-    currentNode = parentNode;
-  }
-
-  return {
-    x: Number.isFinite(x) ? x : 100,
-    y: Number.isFinite(y) ? y : 100,
-  };
-};
-
 const getTopicPosition = (index) => ({
   x: 130 + (index % 2) * 760,
   y: 60 + Math.floor(index / 2) * 620,
@@ -1380,12 +1607,13 @@ export default function App() {
   const [query, setQuery] = useState("");
   const [sourceTitle, setSourceTitle] = useState("");
   const [sourcePageCount, setSourcePageCount] = useState(0);
-  const [sourcePolicy, setSourcePolicy] = useState("smart");
+  const [sourcePolicy, setSourcePolicy] = useState("isolate_uncertain");
   const [isIngestModalOpen, setIsIngestModalOpen] = useState(false);
   const [ingestMode, setIngestMode] = useState("topic");
   const [researchTopics, setResearchTopics] = useState([]);
+  const [researchSources, setResearchSources] = useState([]);
   const [activeTopicId, setActiveTopicId] = useState(null);
-  const [activeMode, setActiveMode] = useState("review");
+  const [activeMode, setActiveMode] = useState("manual");
   const persistedGraphRef = useRef(readGraphUiState());
   const [layoutMode, setLayoutMode] = useState(
     () => persistedGraphRef.current.layoutMode
@@ -1452,6 +1680,7 @@ export default function App() {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [isExtractingSource, setIsExtractingSource] = useState(false);
   const [isReviewing, setIsReviewing] = useState(false);
+  const [isAuditingEvidence, setIsAuditingEvidence] = useState(false);
   const [isDiscoveringConnections, setIsDiscoveringConnections] = useState(false);
   const [reviewingRelationId, setReviewingRelationId] = useState(null);
   const [isCheckingOut, setIsCheckingOut] = useState(false);
@@ -1588,6 +1817,7 @@ export default function App() {
       }
       setProposals(Array.isArray(workspace.proposals) ? workspace.proposals : []);
       setFindings(Array.isArray(workspace.findings) ? workspace.findings : []);
+      setResearchSources(Array.isArray(workspace.sources) ? workspace.sources : []);
       setWorkspaceHistory(Array.isArray(workspace.history) ? workspace.history : []);
       const nextTopics = Array.isArray(workspace.topics) ? workspace.topics : [];
       setResearchTopics(nextTopics);
@@ -1653,13 +1883,25 @@ export default function App() {
   const graphSources = useMemo(() => {
     const uniqueSources = new Map();
 
+    researchSources.forEach((source) => {
+      if (!source.id) return;
+      uniqueSources.set(source.id, source.title || "Research document");
+    });
     findings.forEach((finding) => {
       if (!finding.source_id) return;
       uniqueSources.set(finding.source_id, finding.source_title || "Research document");
     });
 
     return [...uniqueSources.entries()].map(([id, title]) => ({ id, title }));
-  }, [findings]);
+  }, [findings, researchSources]);
+
+  const activeSources = useMemo(
+    () =>
+      researchSources.filter(
+        (source) => !activeTopicId || source.topic_id === activeTopicId
+      ),
+    [activeTopicId, researchSources]
+  );
 
   const visibleFindings = useMemo(() => {
     const searchQuery = graphSearch.trim().toLowerCase();
@@ -1719,7 +1961,7 @@ export default function App() {
     setText("");
     setSourceTitle("");
     setSourcePageCount(0);
-    setSourcePolicy("smart");
+    setSourcePolicy("isolate_uncertain");
     setError("");
     setIsIngestModalOpen(true);
   }, []);
@@ -1739,11 +1981,31 @@ export default function App() {
       setText("");
       setSourceTitle("");
       setSourcePageCount(0);
-      setSourcePolicy("smart");
+      setSourcePolicy("isolate_uncertain");
       setError("");
       setIsIngestModalOpen(true);
     },
     [activeTopicId, openNewTopic, researchTopics]
+  );
+
+  const openTopicEditor = useCallback(
+    (topic = activeTopic) => {
+      if (!topic) {
+        openNewTopic();
+        return;
+      }
+
+      setIngestMode("edit");
+      setActiveTopicId(topic.id);
+      setQuery(topic.query || topic.title);
+      setText("");
+      setSourceTitle("");
+      setSourcePageCount(0);
+      setError("");
+      setNotice("");
+      setIsIngestModalOpen(true);
+    },
+    [activeTopic, openNewTopic]
   );
 
   const handleSourceExtraction = useCallback(async (file) => {
@@ -1883,6 +2145,11 @@ export default function App() {
       return;
     }
 
+    if (text.trim().length > MAX_ANALYSIS_CHARACTERS) {
+      setError(copy.sourceTooLarge(MAX_ANALYSIS_CHARACTERS));
+      return;
+    }
+
     try {
       setIsAnalyzing(true);
       setError("");
@@ -1946,15 +2213,20 @@ export default function App() {
         ? copy.topicFit(topicFit.score, topicFit.verdict, topicFit.reason)
         : "";
 
-      setNotice(
+      const primaryNotice =
         data?.source_quarantined
           ? copy.sourceQuarantined(topicFitSummary)
           : data?.warning
             ? `${localizeBackendWarning(data.warning, topicFit, copy)}${topicFitSummary ? ` ${topicFitSummary}` : ""}`
             : acceptedProposalCount > 0
               ? copy.createdProposals(acceptedProposalCount, topicFitSummary)
-              : copy.noProposalsAnalysis(topicFitSummary)
-      );
+              : copy.noProposalsAnalysis(topicFitSummary);
+      const chunkNotice =
+        Number(data?.analysis_chunks) > 1
+          ? copy.chunkedAnalysisComplete(Number(data.analysis_chunks))
+          : "";
+
+      setNotice([primaryNotice, chunkNotice].filter(Boolean).join(" "));
 
       await loadWorkspace();
 
@@ -1963,8 +2235,12 @@ export default function App() {
         requestAnimationFrame(() => applyMagicLayoutRef.current?.(suggestedLayout));
       }
     } catch (requestError) {
+      const requestMessage =
+        requestError instanceof Error ? requestError.message : "";
       setError(
-        getLocalizedRequestError(requestError, copy.analysisFailed)
+        requestMessage.includes("SOURCE_ALREADY_ANALYZED")
+          ? copy.sourceAlreadyAnalyzed
+          : getLocalizedRequestError(requestError, copy.analysisFailed)
       );
     } finally {
       setIsAnalyzing(false);
@@ -1984,6 +2260,90 @@ export default function App() {
     targetLang,
     text,
     copy,
+  ]);
+
+  const handleTopicReframe = useCallback(async () => {
+    const sessionApiKey = apiKey.trim();
+
+    if (!activeTopicId) {
+      setError(copy.chooseTopic);
+      return;
+    }
+    if (!sessionApiKey && !isOpenAiConfigured) {
+      setError(copy.requiresKey);
+      return;
+    }
+    if (!query.trim()) {
+      setError(copy.fillResearchFields);
+      return;
+    }
+
+    try {
+      setIsAnalyzing(true);
+      setError("");
+      setNotice("");
+      setSocraticDraft(null);
+      setDraftTargetFindingId(null);
+      setDraftTopicId(null);
+      await persistUiState();
+
+      const response = await fetch(
+        `${API_URL}/api/topics/${encodeURIComponent(activeTopicId)}/reframe`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            query: query.trim(),
+            target_lang: targetLang,
+            api_key: sessionApiKey || undefined,
+          }),
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error(await readError(response, copy.reframeFailed));
+      }
+
+      const data = await response.json();
+      const suggestedLayout = LAYOUT_MODES.includes(data?.suggested_layout)
+        ? data.suggested_layout
+        : "graph";
+
+      setSelectedItem(null);
+      setSelectedNodeIds([]);
+      setSelectedDraftNodeId(null);
+      setIsIngestModalOpen(false);
+      await loadWorkspace();
+      setLayoutMode(suggestedLayout);
+      requestAnimationFrame(() =>
+        applyMagicLayoutRef.current?.(suggestedLayout)
+      );
+      setNotice(
+        copy.topicReframed(
+          Number(data?.updated_findings) || 0,
+          Number(data?.created_relations) || 0
+        )
+      );
+    } catch (requestError) {
+      const requestMessage =
+        requestError instanceof Error ? requestError.message : "";
+      setError(
+        requestMessage.includes("TOPIC_HAS_NO_VERIFIED_FINDINGS")
+          ? copy.topicNeedsVerifiedFacts
+          : getLocalizedRequestError(requestError, copy.reframeFailed)
+      );
+    } finally {
+      setIsAnalyzing(false);
+    }
+  }, [
+    activeTopicId,
+    apiKey,
+    copy,
+    isOpenAiConfigured,
+    loadWorkspace,
+    persistUiState,
+    query,
+    targetLang,
   ]);
 
   const handleProposalCommit = async (proposalId) => {
@@ -2142,6 +2502,58 @@ export default function App() {
       }
     },
     [copy, loadWorkspace, persistUiState]
+  );
+
+  const handleEvidenceQualityAudit = useCallback(
+    async (findingId) => {
+      const sessionApiKey = apiKey.trim();
+
+      if (!sessionApiKey && !isOpenAiConfigured) {
+        setError(copy.requiresKey);
+        return;
+      }
+
+      try {
+        setIsAuditingEvidence(true);
+        setError("");
+        setNotice("");
+
+        const response = await fetch(
+          `${API_URL}/api/findings/${encodeURIComponent(findingId)}/quality-audit`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              target_lang: targetLang,
+              api_key: sessionApiKey || undefined,
+            }),
+          }
+        );
+
+        if (!response.ok) {
+          throw new Error(await readError(response, copy.qualityAuditFailed));
+        }
+
+        await response.json();
+        const workspace = await loadWorkspace();
+        const auditedFinding = Array.isArray(workspace?.findings)
+          ? workspace.findings.find((finding) => finding.id === findingId)
+          : null;
+
+        if (auditedFinding) {
+          setSelectedItem({ kind: "finding", item: auditedFinding });
+          setInspectorTab("state");
+        }
+        setNotice(copy.auditCompleted);
+      } catch (requestError) {
+        setError(
+          getLocalizedRequestError(requestError, copy.qualityAuditFailed)
+        );
+      } finally {
+        setIsAuditingEvidence(false);
+      }
+    },
+    [apiKey, copy, isOpenAiConfigured, loadWorkspace, targetLang]
   );
 
   const handleSocraticReview = useCallback(async () => {
@@ -2438,19 +2850,26 @@ export default function App() {
         .map((relation) => {
           const isManualRelation = relation.origin === "manual";
           const isCandidateRelation = relation.status === "candidate";
-          const isCrossTopicHypothesis = relation.status === "hypothesis";
+          const isHypothesisRelation = relation.status === "hypothesis";
+          const isCrossTopicHypothesis =
+            isHypothesisRelation && relation.type === "cross-topic hypothesis";
           const edgeColor = isCandidateRelation
             ? "#facc15"
+            : isHypothesisRelation
+              ? "#a78bfa"
             : isManualRelation
               ? "#a78bfa"
               : "#22d3ee";
           const relationId = relation.id || `${relation.target_id}-${relation.type}`;
           const displayLabel = isCandidateRelation
-            ? `${copy.review} · ${formatRelationType(relation.type, uiLanguage)}${relation.confidence_score ? ` · ${relation.confidence_score}%` : ""}`
-            : isCrossTopicHypothesis
-              ? formatRelationType("cross-topic hypothesis", uiLanguage)
+            ? `${copy.review} · ${formatRelationType(relation.type, uiLanguage)}${relation.confidence_score ? ` · ${copy.aiConfidence} ${relation.confidence_score}%` : ""}`
+            : isHypothesisRelation
+              ? `${copy.hypothesis} · ${formatRelationType(
+                  isCrossTopicHypothesis ? "cross-topic hypothesis" : relation.type,
+                  uiLanguage
+                )}`
               : relation.confidence_score
-                ? `${formatRelationType(relation.type, uiLanguage)} · ${relation.confidence_score}%`
+                ? `${formatRelationType(relation.type, uiLanguage)} · ${copy.aiConfidence} ${relation.confidence_score}%`
                 : formatRelationType(relation.type, uiLanguage);
 
           return {
@@ -2465,13 +2884,15 @@ export default function App() {
             style: {
               stroke: edgeColor,
               strokeWidth: isCandidateRelation || isManualRelation ? 2 : 1.5,
-              ...(isCandidateRelation || isCrossTopicHypothesis
+              ...(isCandidateRelation || isHypothesisRelation
                 ? { strokeDasharray: "5, 5" }
                 : {}),
             },
             labelStyle: {
               fill: isCandidateRelation
                 ? "#fde047"
+                : isHypothesisRelation
+                  ? "#c4b5fd"
                 : isManualRelation
                   ? "#c4b5fd"
                   : "#94a3b8",
@@ -2479,11 +2900,13 @@ export default function App() {
             },
             labelBgStyle: { fill: "#0f172a", fillOpacity: 0.92 },
             data: {
-              system: isCandidateRelation
-                ? "candidate-relation"
-                : isManualRelation
+              system: isManualRelation
                   ? "manual-persisted"
-                  : "relation",
+                  : isCandidateRelation
+                    ? "candidate-relation"
+                    : isHypothesisRelation
+                      ? "hypothesis-relation"
+                      : "relation",
               sourceFindingId: finding.id,
               targetFindingId: relation.target_id,
               relationId,
@@ -2548,7 +2971,9 @@ export default function App() {
 
   const handleNodesChange = useCallback(
     (changes) => {
-      const nodeById = new Map(nodes.map((node) => [node.id, node]));
+      const nodeById = new Map(
+        nodesRef.current.map((node) => [node.id, node])
+      );
 
       onNodesChange(
         changes.filter((change) => {
@@ -2560,40 +2985,49 @@ export default function App() {
           );
         })
       );
+    },
+    [onNodesChange]
+  );
 
-      setNodePositions((currentPositions) => {
-        let hasPositionChange = false;
-        const nextPositions = { ...currentPositions };
+  const handleNodeDragStop = useCallback(
+    (_event, draggedNode) => {
+      if (!draggedNode || draggedNode.type === "contextLayer") return;
 
-        changes.forEach((change) => {
-          if (change.type !== "position") {
-            return;
+      const currentNodes = nodesRef.current.map((node) =>
+        node.id === draggedNode.id ? draggedNode : node
+      );
+      const absolutePosition = isUsablePosition(draggedNode.positionAbsolute)
+        ? {
+            x: Number(draggedNode.positionAbsolute.x),
+            y: Number(draggedNode.positionAbsolute.y),
           }
+        : getAbsoluteNodePosition(currentNodes, draggedNode.id);
+      const savedPosition = {
+        x: Number.isFinite(absolutePosition.x) ? absolutePosition.x : 100,
+        y: Number.isFinite(absolutePosition.y) ? absolutePosition.y : 100,
+      };
 
-          const changedNode = nodeById.get(change.id);
+      setNodePositions((currentPositions) => ({
+        ...currentPositions,
+        [draggedNode.id]: savedPosition,
+      }));
 
-          if (!changedNode || changedNode.type === "contextLayer") {
-            return;
-          }
+      const currentUiState = buildUiState();
+      const nextUiState = {
+        ...currentUiState,
+        node_positions: [
+          ...currentUiState.node_positions.filter(
+            (position) => position.id !== draggedNode.id
+          ),
+          { id: draggedNode.id, ...savedPosition },
+        ],
+      };
 
-          const absolutePosition = getAbsolutePositionFromChange(
-            nodes,
-            change.id,
-            change
-          );
-
-          if (!absolutePosition) {
-            return;
-          }
-
-          nextPositions[change.id] = absolutePosition;
-          hasPositionChange = true;
-        });
-
-        return hasPositionChange ? nextPositions : currentPositions;
+      void persistUiState(nextUiState).catch((requestError) => {
+        setError(getLocalizedRequestError(requestError, copy.uiSaveFailed));
       });
     },
-    [nodes, onNodesChange]
+    [buildUiState, copy, persistUiState]
   );
 
   const removePersistedManualRelation = useCallback(
@@ -2673,94 +3107,87 @@ export default function App() {
       const targetFindingId = connection.target.startsWith("finding-")
         ? connection.target.replace("finding-", "")
         : null;
-      const sourceFinding = sourceFindingId
-        ? findings.find((finding) => finding.id === sourceFindingId)
-        : null;
-      const targetFinding = targetFindingId
-        ? findings.find((finding) => finding.id === targetFindingId)
-        : null;
+
+      if (!sourceFindingId || !targetFindingId) {
+        setError(copy.manualFactsOnly);
+        return;
+      }
+
+      const sourceFinding = findings.find(
+        (finding) => finding.id === sourceFindingId
+      );
+      const targetFinding = findings.find(
+        (finding) => finding.id === targetFindingId
+      );
+      if (!sourceFinding || !targetFinding) {
+        setError(copy.manualFactsOnly);
+        return;
+      }
+
       const isCrossTopicHypothesis = Boolean(
-        sourceFinding &&
-          targetFinding &&
-          sourceFinding.topic_id !== targetFinding.topic_id
+        sourceFinding.topic_id !== targetFinding.topic_id
       );
       const edgeId = `manual-${connection.source}-${connection.target}-${Date.now()}`;
       const nextManualEdge = {
         ...connection,
         id: edgeId,
         type: "smoothstep",
-        label: formatRelationType(
-          isCrossTopicHypothesis ? "cross-topic hypothesis" : "manual link",
-          uiLanguage
-        ),
+        label: copy.savingManualLink,
+        animated: true,
         markerEnd: { type: MarkerType.ArrowClosed, color: "#a78bfa" },
         style: {
           stroke: "#a78bfa",
           strokeWidth: 2,
-          ...(isCrossTopicHypothesis ? { strokeDasharray: "5, 5" } : {}),
+          strokeDasharray: "5, 5",
         },
         labelStyle: { fill: "#c4b5fd", fontSize: 11 },
         labelBgStyle: { fill: "#0f172a", fillOpacity: 0.92 },
         data: {
           system: "manual",
-          relationStatus: isCrossTopicHypothesis ? "hypothesis" : "verified",
+          relationStatus: isCrossTopicHypothesis ? "hypothesis" : "manual",
         },
       };
 
       const nextManualEdges = addEdge(nextManualEdge, manualEdges);
       setManualEdges(nextManualEdges);
 
-      const nextUiState = {
-        ...buildUiState(),
-        manual_edges: nextManualEdges,
-      };
-
-      if (
-        connection.source.startsWith("finding-") &&
-        connection.target.startsWith("finding-")
-      ) {
-        void (async () => {
-          try {
-            await persistUiState(nextUiState);
-            const response = await fetch(
-              `${API_URL}/api/findings/${encodeURIComponent(sourceFindingId)}/relations`,
-              {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                  target_id: targetFindingId,
-                  type: isCrossTopicHypothesis
-                    ? "cross-topic hypothesis"
-                    : "manual link",
-                }),
-              }
-            );
-
-            if (!response.ok) {
-              throw new Error(
-                await readError(response, copy.manualRelationFailed)
-              );
+      void (async () => {
+        try {
+          const response = await fetch(
+            `${API_URL}/api/findings/${encodeURIComponent(sourceFindingId)}/relations`,
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                target_id: targetFindingId,
+                type: isCrossTopicHypothesis
+                  ? "cross-topic hypothesis"
+                  : "manual link",
+              }),
             }
+          );
 
-            setManualEdges((currentEdges) =>
-              currentEdges.filter((edge) => edge.id !== edgeId)
-            );
-            await loadWorkspace();
-          } catch (requestError) {
-            setError(
-              getLocalizedRequestError(requestError, copy.manualRelationFailed)
+          if (!response.ok) {
+            throw new Error(
+              await readError(response, copy.manualRelationFailed)
             );
           }
-        })();
-      } else {
-        void persistUiState(nextUiState).catch((requestError) => {
+
+          setManualEdges((currentEdges) =>
+            currentEdges.filter((edge) => edge.id !== edgeId)
+          );
+          await loadWorkspace();
+        } catch (requestError) {
+          setManualEdges((currentEdges) =>
+            currentEdges.filter((edge) => edge.id !== edgeId)
+          );
           setError(
             getLocalizedRequestError(requestError, copy.manualRelationFailed)
           );
-        });
-      }
+        }
+      })();
     },
-    [buildUiState, copy, findings, loadWorkspace, manualEdges, persistUiState, uiLanguage]
+    [copy, findings, loadWorkspace, manualEdges]
   );
 
   const handleNodeClick = useCallback((event, node) => {
@@ -2768,7 +3195,7 @@ export default function App() {
 
     if (node.type === "root") {
       setActiveTopicId(node.data.root.id);
-      openSourceIngestion(node.data.root.id);
+      openTopicEditor(node.data.root);
       return;
     }
 
@@ -2784,7 +3211,7 @@ export default function App() {
       setSelectedDraftNodeId(null);
       setInspectorTab("state");
     }
-  }, [openSourceIngestion]);
+  }, [openTopicEditor]);
 
   const handleEdgeClick = useCallback(
     (event, edge) => {
@@ -2891,46 +3318,150 @@ export default function App() {
 
     const layerNumber = layerCounter.current;
     layerCounter.current += 1;
-    setContextLayers((currentLayers) => [
-      ...currentLayers,
+    const nextContextLayers = [
+      ...contextLayers,
       {
         id: `context-layer-${Date.now()}`,
         label: `${copy.contextLayer} ${layerNumber}`,
         memberIds: groupableNodes.map((node) => node.id),
       },
-    ]);
+    ];
+    setContextLayers(nextContextLayers);
     setSelectedNodeIds([]);
     setError("");
-  }, [copy, nodes, selectedNodeIds]);
+
+    void persistUiState({
+      ...buildUiState(),
+      selected_node_id: null,
+      context_layers: nextContextLayers,
+    }).catch((requestError) => {
+      setError(getLocalizedRequestError(requestError, copy.uiSaveFailed));
+    });
+  }, [buildUiState, contextLayers, copy, nodes, persistUiState, selectedNodeIds]);
 
   function applyMagicLayout(requestedLayoutMode = layoutMode) {
-    const activeLayoutMode = ["graph", "tree", "timeline", "comparison"].includes(
-      requestedLayoutMode
-    )
+    const activeLayoutMode = LAYOUT_MODES.includes(requestedLayoutMode)
       ? requestedLayoutMode
       : "graph";
     const nextPositions = {};
-    let treeOffsetY = 60;
+    let treeOffsetY = 80;
 
     researchTopics.forEach((topic, topicIndex) => {
       const topicNodeId = `topic-${topic.id}`;
-      const topicFindings = findings.filter((finding) => finding.topic_id === topic.id);
+      const topicFindings = findings
+        .filter((finding) => finding.topic_id === topic.id)
+        .sort(
+          (left, right) =>
+            Number(right.query_relevance_score ?? -1) -
+            Number(left.query_relevance_score ?? -1)
+        );
       const graphTopicPosition = getTopicPosition(topicIndex);
       const rootPosition =
         activeLayoutMode === "tree"
-          ? { x: 160, y: treeOffsetY }
+          ? { x: 420, y: treeOffsetY }
           : activeLayoutMode === "timeline"
             ? { x: 100, y: 110 + topicIndex * 520 }
             : graphTopicPosition;
 
       nextPositions[topicNodeId] = rootPosition;
 
+      if (activeLayoutMode === "tree") {
+        const findingIds = new Set(topicFindings.map((finding) => finding.id));
+        const incomingCount = new Map(
+          topicFindings.map((finding) => [finding.id, 0])
+        );
+        const childrenById = new Map(
+          topicFindings.map((finding) => [finding.id, []])
+        );
+
+        topicFindings.forEach((finding) => {
+          (finding.relations || [])
+            .filter(
+              (relation) =>
+                findingIds.has(relation.target_id) &&
+                relation.target_id !== finding.id &&
+                relation.status !== "hypothesis"
+            )
+            .forEach((relation) => {
+              childrenById.get(finding.id)?.push(relation.target_id);
+              incomingCount.set(
+                relation.target_id,
+                (incomingCount.get(relation.target_id) || 0) + 1
+              );
+            });
+        });
+
+        let hierarchyRoots = topicFindings.filter(
+          (finding) => (incomingCount.get(finding.id) || 0) === 0
+        );
+        if (hierarchyRoots.length === 0 && topicFindings.length > 0) {
+          hierarchyRoots = [topicFindings[0]];
+        }
+
+        const levelById = new Map();
+        const queue = hierarchyRoots.map((finding) => {
+          levelById.set(finding.id, 1);
+          return finding.id;
+        });
+
+        while (queue.length > 0) {
+          const sourceId = queue.shift();
+          const sourceLevel = levelById.get(sourceId) || 1;
+
+          (childrenById.get(sourceId) || []).forEach((targetId) => {
+            if (levelById.has(targetId)) return;
+            levelById.set(targetId, sourceLevel + 1);
+            queue.push(targetId);
+          });
+        }
+
+        topicFindings.forEach((finding) => {
+          if (levelById.has(finding.id)) return;
+          const relevance = Number(finding.query_relevance_score);
+          levelById.set(
+            finding.id,
+            Number.isFinite(relevance)
+              ? relevance >= 75 ? 1 : relevance >= 45 ? 2 : 3
+              : 1
+          );
+        });
+
+        const findingsByLevel = new Map();
+        topicFindings.forEach((finding) => {
+          const level = levelById.get(finding.id) || 1;
+          const levelFindings = findingsByLevel.get(level) || [];
+          levelFindings.push(finding);
+          findingsByLevel.set(level, levelFindings);
+        });
+
+        const orderedLevels = [...findingsByLevel.keys()].sort(
+          (left, right) => left - right
+        );
+        orderedLevels.forEach((level) => {
+          const levelFindings = findingsByLevel.get(level) || [];
+          const levelWidth = Math.max(levelFindings.length - 1, 0) * 340;
+
+          levelFindings.forEach((finding, columnIndex) => {
+            const position = {
+              x: rootPosition.x - levelWidth / 2 + columnIndex * 340,
+              y: rootPosition.y + 220 + (level - 1) * 240,
+            };
+            nextPositions[`finding-${finding.id}`] = {
+              x: Number.isFinite(position.x) ? position.x : 100,
+              y: Number.isFinite(position.y) ? position.y : 100,
+            };
+          });
+        });
+
+        const deepestLevel = Math.max(1, ...orderedLevels);
+        treeOffsetY += deepestLevel * 240 + 520;
+        return;
+      }
+
       topicFindings.forEach((finding, factIndex) => {
         const nodeId = `finding-${finding.id}`;
         const position =
-          activeLayoutMode === "tree"
-            ? { x: 160, y: rootPosition.y + 220 + factIndex * 230 }
-            : activeLayoutMode === "timeline"
+          activeLayoutMode === "timeline"
               ? { x: rootPosition.x + 340 + factIndex * 360, y: rootPosition.y }
               : activeLayoutMode === "comparison"
                 ? {
@@ -2938,8 +3469,8 @@ export default function App() {
                     y: rootPosition.y + 230 + Math.floor(factIndex / 2) * 230,
                   }
                 : {
-                x: rootPosition.x + (factIndex % 2) * 330,
-                y: rootPosition.y + 230 + Math.floor(factIndex / 2) * 210,
+                    x: rootPosition.x + (factIndex % 3) * 330,
+                    y: rootPosition.y + 230 + Math.floor(factIndex / 3) * 210,
                   };
 
         nextPositions[nodeId] = {
@@ -2947,10 +3478,6 @@ export default function App() {
           y: Number.isFinite(position.y) ? position.y : 100,
         };
       });
-
-      if (activeLayoutMode === "tree") {
-        treeOffsetY += Math.max(topicFindings.length, 1) * 230 + 330;
-      }
     });
 
     if (socraticDraft) {
@@ -2976,15 +3503,34 @@ export default function App() {
       ...currentPositions,
       ...nextPositions,
     }));
+
+    const currentUiState = buildUiState();
+    const positionsById = new Map(
+      currentUiState.node_positions.map((position) => [position.id, position])
+    );
+    Object.entries(nextPositions).forEach(([id, position]) => {
+      positionsById.set(id, { id, x: position.x, y: position.y });
+    });
+    void persistUiState({
+      ...currentUiState,
+      mode: activeLayoutMode,
+      node_positions: [...positionsById.values()],
+    }).catch((requestError) => {
+      setError(getLocalizedRequestError(requestError, copy.uiSaveFailed));
+    });
   }
 
   applyMagicLayoutRef.current = applyMagicLayout;
 
   const generateMarkdownReport = useCallback(() => {
-    const verifiedFacts = findings;
+    const verifiedFacts = activeTopicId
+      ? findings.filter((finding) => finding.topic_id === activeTopicId)
+      : findings;
 
     const report = [
-      "# Flow-AI Cyber Report",
+      "# Flow-AI Research Report",
+      activeTopic?.title ? `## Topic: ${activeTopic.title}` : "",
+      activeTopic?.query ? `**Active query:** ${activeTopic.query}` : "",
       "",
       ...verifiedFacts.flatMap((finding) => {
         const evidence = Array.isArray(finding.evidence)
@@ -3013,10 +3559,10 @@ export default function App() {
     anchor.click();
     document.body.removeChild(anchor);
     URL.revokeObjectURL(url);
-  }, [findings]);
+  }, [activeTopic, activeTopicId, findings]);
 
   const selectedEvidence = selectedItem
-    ? getEvidence(selectedItem.item, selectedItem.kind === "draft")
+    ? getEvidence(selectedItem.item, selectedItem.kind === "draft", copy)
     : [];
 
   const pendingRelationReviews =
@@ -3024,7 +3570,8 @@ export default function App() {
       ? (selectedItem.item.relations || [])
           .filter(
             (relation) =>
-              relation?.origin === "ai" && relation?.status === "candidate"
+              relation?.origin === "ai" &&
+              ["candidate", "hypothesis"].includes(relation?.status)
           )
           .map((relation) => ({
             ...relation,
@@ -3035,7 +3582,7 @@ export default function App() {
           }))
       : selectedItem?.kind === "relation" &&
           selectedItem.item.origin === "ai" &&
-          selectedItem.item.status === "candidate"
+          ["candidate", "hypothesis"].includes(selectedItem.item.status)
         ? [
             {
               ...selectedItem.item,
@@ -3067,6 +3614,9 @@ export default function App() {
             target_title: selectedItem.item.target_title,
             confidence_score: selectedItem.item.confidence_score,
             evidence: selectedItem.item.evidence || null,
+            source_evidence: selectedItem.item.source_evidence || null,
+            target_evidence: selectedItem.item.target_evidence || null,
+            support_status: selectedItem.item.support_status || "not_checked",
             reason: selectedItem.item.reason || null,
           }
       : {
@@ -3137,9 +3687,16 @@ export default function App() {
         : proposals;
 
       return [...scopedProposals].sort(
-        (left, right) =>
-          Number(right.confidence_score ?? -1) -
-          Number(left.confidence_score ?? -1)
+        (left, right) => {
+          const relevanceDifference =
+            Number(right.query_relevance_score ?? -1) -
+            Number(left.query_relevance_score ?? -1);
+
+          return relevanceDifference !== 0
+            ? relevanceDifference
+            : Number(right.confidence_score ?? -1) -
+                Number(left.confidence_score ?? -1);
+        }
       );
     },
     [activeTopicId, proposals]
@@ -3153,7 +3710,6 @@ export default function App() {
           activeMode={activeMode}
           setActiveMode={setActiveMode}
           layoutMode={layoutMode}
-          setLayoutMode={setLayoutMode}
           onLayoutChange={(mode) => {
             setLayoutMode(mode);
             applyMagicLayout(mode);
@@ -3161,7 +3717,6 @@ export default function App() {
           onOpenIngest={openNewTopic}
           onRunCopilot={handleSocraticReview}
           onMagicLayout={() => applyMagicLayout()}
-          onDownloadReport={generateMarkdownReport}
           isReviewing={isReviewing}
           error={error}
           notice={notice}
@@ -3192,7 +3747,7 @@ export default function App() {
                 </div>
               ) : (
                 visibleProposals.map((proposal) => {
-                  const confidenceTier = getConfidenceTier(proposal);
+                  const confidenceTier = getConfidenceTier(proposal, copy);
 
                   return (
                     <article
@@ -3226,8 +3781,16 @@ export default function App() {
                       </span>
                     </div>
                     <p className="mt-1 text-[10px] font-bold uppercase tracking-wider text-slate-500">
-                      {copy.evidenceConfidence} · <span className={confidenceTier.className}>{confidenceTier.label}</span>
+                      {copy.aiConfidence} · <span className={confidenceTier.className}>{confidenceTier.label}</span>
                     </p>
+                    {Number.isFinite(Number(proposal.query_relevance_score)) && (
+                      <p
+                        className="mt-1 text-[10px] font-bold uppercase tracking-wider text-violet-300"
+                        title={proposal.query_relevance_reason || undefined}
+                      >
+                        {copy.queryRelevance} · {proposal.query_relevance_score}%
+                      </p>
+                    )}
                     {proposal.source_title && (
                       <p className="mt-2 truncate text-[10px] font-semibold text-cyan-300/80">
                         {copy.source}: {proposal.source_title}
@@ -3257,7 +3820,7 @@ export default function App() {
           </aside>
 
           <section className="relative min-h-0 bg-[#0B1120]" aria-label={copy.canvasLabel}>
-            <div className="absolute left-4 top-4 z-10 max-w-[calc(100%-2rem)] rounded-lg border border-slate-700/80 bg-slate-900/90 px-3 py-2 backdrop-blur">
+            <div className="absolute left-4 right-4 top-4 z-10 rounded-lg border border-slate-700/80 bg-slate-900/90 px-3 py-2 backdrop-blur">
               <p className="text-[10px] font-extrabold uppercase tracking-[0.16em] text-cyan-400">
                 {copy.activeTopic}
               </p>
@@ -3294,12 +3857,33 @@ export default function App() {
                 </button>
                 <button
                   type="button"
+                  onClick={() => openTopicEditor(activeTopic)}
+                  disabled={!activeTopic}
+                  className="rounded-md border border-violet-400/50 bg-violet-400/10 px-2.5 py-1.5 text-xs font-extrabold text-violet-200 transition hover:bg-violet-400 hover:text-slate-950 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  {copy.editTopic}
+                </button>
+                <button
+                  type="button"
                   onClick={handleDeleteActiveTopic}
                   disabled={!activeTopic || isDeletingTopic}
                   className="rounded-md border border-rose-400/55 bg-rose-400/10 px-2.5 py-1.5 text-xs font-extrabold text-rose-200 transition hover:bg-rose-400 hover:text-slate-950 disabled:cursor-not-allowed disabled:opacity-40"
                 >
                   {isDeletingTopic ? copy.deleting : copy.deleteTopic}
                 </button>
+                <div className="ml-auto flex items-center gap-2 rounded-lg border border-slate-700 bg-slate-950/65 p-1.5">
+                  <span className="px-1 text-xs font-semibold text-slate-400">
+                    {selectedNodeIds.length} {copy.selected}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={handleGroupSelection}
+                    disabled={selectedNodeIds.length < 2}
+                    className="rounded-md bg-cyan-400 px-3 py-1.5 text-xs font-extrabold text-slate-950 transition hover:bg-cyan-300 disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    {copy.group}
+                  </button>
+                </div>
               </div>
               <p className="mt-2 text-xs text-slate-400">
                 {copy.graphIntro}
@@ -3384,20 +3968,6 @@ export default function App() {
               </details>
             </div>
 
-            <div className="absolute right-4 top-4 z-10 flex items-center gap-2 rounded-lg border border-slate-700/80 bg-slate-900/90 p-2 backdrop-blur">
-              <span className="px-1 text-xs font-semibold text-slate-400">
-                {selectedNodeIds.length} {copy.selected}
-              </span>
-              <button
-                type="button"
-                onClick={handleGroupSelection}
-                disabled={selectedNodeIds.length < 2}
-                className="rounded-md bg-cyan-400 px-3 py-1.5 text-xs font-extrabold text-slate-950 transition hover:bg-cyan-300 disabled:cursor-not-allowed disabled:opacity-40"
-              >
-                {copy.group}
-              </button>
-            </div>
-
             <ReactFlow
               nodes={nodes}
               edges={edges}
@@ -3406,6 +3976,7 @@ export default function App() {
               nodesConnectable={activeMode === "manual"}
               elementsSelectable={true}
               onNodesChange={handleNodesChange}
+              onNodeDragStop={handleNodeDragStop}
               onEdgesChange={handleEdgesChange}
               onConnect={handleConnect}
               onNodeClick={handleNodeClick}
@@ -3440,7 +4011,7 @@ export default function App() {
             </ReactFlow>
           </section>
 
-          <aside className="flex min-h-0 flex-col border-l border-slate-800 bg-[#0F172A]">
+          <aside className="flex min-h-0 min-w-0 flex-col border-l border-slate-800 bg-[#0F172A]">
             <div className="border-b border-slate-800 p-4">
               <p className="text-[10px] font-extrabold uppercase tracking-[0.18em] text-yellow-400">
                 {copy.socraticCopilot}
@@ -3504,7 +4075,76 @@ export default function App() {
               )}
             </div>
 
-            <div className="min-h-0 flex-1 overflow-y-auto p-4">
+            <div className="min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden p-4">
+              <details className="mb-4 rounded-xl border border-sky-400/25 bg-sky-400/5 p-3">
+                <summary className="cursor-pointer list-none">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="text-[10px] font-extrabold uppercase tracking-[0.16em] text-sky-300">
+                        {copy.sourceLibrary}
+                      </p>
+                      <p className="mt-1 truncate text-xs text-slate-400">
+                        {copy.sourceLibrarySummary(activeSources.length)}
+                      </p>
+                    </div>
+                    <span className="rounded-full border border-sky-400/30 bg-slate-950 px-2 py-1 text-[10px] font-extrabold text-sky-200">
+                      {activeSources.length}
+                    </span>
+                  </div>
+                </summary>
+                <div className="mt-3 space-y-2 border-t border-sky-400/15 pt-3">
+                  {activeSources.map((source) => {
+                    const retryNeeded = source.analysis_status === "needs_retry";
+
+                    return (
+                      <article
+                        key={source.id}
+                        className="rounded-lg border border-slate-700 bg-slate-950/55 p-2.5"
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <p className="min-w-0 break-words text-xs font-bold leading-5 text-slate-100">
+                            {source.title}
+                          </p>
+                          <span
+                            className={`shrink-0 rounded-full px-2 py-1 text-[9px] font-extrabold uppercase tracking-wide ${
+                              retryNeeded
+                                ? "bg-rose-400/15 text-rose-200"
+                                : "bg-emerald-400/15 text-emerald-200"
+                            }`}
+                          >
+                            {retryNeeded ? copy.sourceRetryNeeded : copy.sourceReady}
+                          </span>
+                        </div>
+                        <div className="mt-2 flex flex-wrap gap-1.5 text-[9px] font-bold uppercase tracking-wide text-slate-400">
+                          {Number(source.page_count) > 0 && (
+                            <span className="rounded bg-slate-900 px-1.5 py-1">
+                              {copy.sourcePages(Number(source.page_count))}
+                            </span>
+                          )}
+                          <span className="rounded bg-slate-900 px-1.5 py-1">
+                            {copy.sourceCharacters(Number(source.character_count) || 0)}
+                          </span>
+                          <span className="rounded bg-slate-900 px-1.5 py-1">
+                            {copy.sourceSections(Number(source.analysis_chunks) || 1)}
+                          </span>
+                          <span className="rounded bg-slate-900 px-1.5 py-1 text-cyan-300">
+                            {copy.topicFitVerdict(source.topic_fit_status || "uncertain")} · {source.topic_fit_score ?? "—"}/100
+                          </span>
+                        </div>
+                        {source.topic_fit_reason && (
+                          <p className="mt-2 break-words text-[10px] leading-4 text-slate-500">
+                            {source.topic_fit_reason ===
+                            "This source establishes a new research topic."
+                              ? copy.newTopicSourceReason
+                              : source.topic_fit_reason}
+                          </p>
+                        )}
+                      </article>
+                    );
+                  })}
+                </div>
+              </details>
+
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <p className="text-[10px] font-extrabold uppercase tracking-[0.18em] text-cyan-400">
@@ -3623,15 +4263,6 @@ export default function App() {
                 </div>
               ) : (
                 <div className="mt-4 space-y-4">
-                  <section className="rounded-xl border border-slate-700 bg-slate-950/55 p-3">
-                    <h3 className="text-[10px] font-extrabold uppercase tracking-[0.16em] text-slate-400">
-                      {copy.rawState}
-                    </h3>
-                    <pre className="mt-3 max-h-56 overflow-auto whitespace-pre-wrap break-words text-xs leading-5 text-cyan-100">
-                      {JSON.stringify(inspectorState, null, 2)}
-                    </pre>
-                  </section>
-
                   {selectedItem.kind === "relation" && (
                     <section className="rounded-xl border border-slate-700 bg-slate-950/55 p-3">
                       <h3 className="text-[10px] font-extrabold uppercase tracking-[0.16em] text-slate-400">
@@ -3656,7 +4287,13 @@ export default function App() {
                           {formatRelationStatus(selectedItem.item.status || "verified", uiLanguage)}
                         </span>
                         <span className="rounded-full border border-slate-700 bg-slate-900 px-2 py-1 text-slate-300">
-                          {selectedItem.item.confidence_score ?? copy.unscored} {copy.confidence.toLowerCase()}
+                          {copy.confidence}: {selectedItem.item.confidence_score ?? copy.unscored}
+                        </span>
+                        <span className="rounded-full border border-slate-700 bg-slate-900 px-2 py-1 text-slate-300">
+                          {copy.relationSupport}: {formatRelationSupport(
+                            selectedItem.item.support_status || "not_checked",
+                            copy
+                          )}
                         </span>
                       </div>
                     </section>
@@ -3682,7 +4319,7 @@ export default function App() {
                                 {evidence.title}
                               </p>
                             )}
-                            <p className="whitespace-pre-wrap text-sm italic leading-6 text-slate-200">
+                            <p className="whitespace-pre-wrap break-words text-sm italic leading-6 text-slate-200 [overflow-wrap:anywhere]">
                               “{evidence.quote}”
                             </p>
                             {(evidence.page_number || evidence.start_char !== undefined) && (
@@ -3700,6 +4337,110 @@ export default function App() {
                       </div>
                     )}
                   </section>
+
+                  {selectedItem.kind === "finding" && (
+                    <section className="rounded-xl border border-emerald-400/30 bg-emerald-400/5 p-3">
+                      <div className="flex min-w-0 flex-col gap-3">
+                        <div className="min-w-0">
+                          <h3 className="text-[10px] font-extrabold uppercase tracking-[0.16em] text-emerald-300">
+                            {copy.evidenceQualityAudit}
+                          </h3>
+                          <p className="mt-1 break-words text-xs leading-5 text-slate-400 [overflow-wrap:anywhere]">
+                            {copy.auditDescription}
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => handleEvidenceQualityAudit(selectedItem.item.id)}
+                          disabled={isAuditingEvidence}
+                          className="w-full rounded-md border border-emerald-400/60 bg-emerald-400/10 px-2.5 py-2 text-xs font-extrabold text-emerald-200 transition hover:bg-emerald-400 hover:text-slate-950 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          {isAuditingEvidence ? copy.auditingEvidence : copy.auditEvidence}
+                        </button>
+                      </div>
+
+                      {selectedItem.item.quality_audit && (() => {
+                        const audit = selectedItem.item.quality_audit;
+                        const supportClass =
+                          audit.claim_support === "direct"
+                            ? "border-emerald-400/45 bg-emerald-400/10 text-emerald-200"
+                            : audit.claim_support === "partial"
+                              ? "border-amber-400/45 bg-amber-400/10 text-amber-100"
+                              : "border-rose-400/45 bg-rose-400/10 text-rose-100";
+                        const signals = Array.isArray(audit.manipulation_signals)
+                          ? audit.manipulation_signals
+                          : [];
+                        const limitations = Array.isArray(audit.limitations)
+                          ? audit.limitations
+                          : [];
+
+                        return (
+                          <div className="mt-3 space-y-3">
+                            <div className="flex flex-wrap gap-2 text-[10px] font-bold uppercase tracking-wide">
+                              <span className={`rounded-full border px-2 py-1 ${supportClass}`}>
+                                {copy.claimSupport}: {formatClaimSupport(audit.claim_support, copy)}
+                              </span>
+                              <span className="rounded-full border border-slate-700 bg-slate-950 px-2 py-1 text-slate-300">
+                                {copy.evidenceStrength}: {audit.evidence_strength ?? copy.unscored}%
+                              </span>
+                              <span className="rounded-full border border-slate-700 bg-slate-950 px-2 py-1 text-slate-300">
+                                {copy.externalVerification}: {audit.external_verification === "not_checked" ? copy.notChecked : audit.external_verification}
+                              </span>
+                            </div>
+                            <p className="whitespace-pre-wrap text-sm leading-6 text-slate-200">
+                              {audit.summary}
+                            </p>
+                            {limitations.length > 0 && (
+                              <div>
+                                <p className="text-[10px] font-extrabold uppercase tracking-[0.16em] text-slate-400">
+                                  {copy.limitations}
+                                </p>
+                                <ul className="mt-2 space-y-1.5 text-xs leading-5 text-slate-300">
+                                  {limitations.map((limitation, index) => (
+                                    <li key={`${limitation}-${index}`} className="flex gap-2">
+                                      <span className="text-amber-300">•</span>
+                                      <span>{limitation}</span>
+                                    </li>
+                                  ))}
+                                </ul>
+                              </div>
+                            )}
+                            <div>
+                              <p className="text-[10px] font-extrabold uppercase tracking-[0.16em] text-slate-400">
+                                {copy.manipulationSignals}
+                              </p>
+                              {signals.length === 0 ? (
+                                <p className="mt-2 text-xs leading-5 text-slate-500">
+                                  {copy.noManipulationSignals}
+                                </p>
+                              ) : (
+                                <div className="mt-2 space-y-2">
+                                  {signals.map((signal, index) => (
+                                    <article
+                                      key={`${signal.quote}-${index}`}
+                                      className="rounded-lg border border-amber-400/25 bg-slate-950/55 p-2.5"
+                                    >
+                                      <p className="text-[10px] font-extrabold uppercase tracking-[0.14em] text-amber-300">
+                                        {signal.technique}
+                                      </p>
+                                      <blockquote className="mt-1 border-l-2 border-amber-400 pl-2 text-xs italic leading-5 text-slate-200">
+                                        “{signal.quote}”
+                                      </blockquote>
+                                      {signal.explanation && (
+                                        <p className="mt-1.5 text-xs leading-5 text-slate-400">
+                                          {signal.explanation}
+                                        </p>
+                                      )}
+                                    </article>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })()}
+                    </section>
+                  )}
 
                   {pendingRelationReviews.length > 0 && (
                     <section className="rounded-xl border border-dashed border-yellow-400/70 bg-yellow-400/5 p-3">
@@ -3720,6 +4461,11 @@ export default function App() {
                       <div className="mt-3 space-y-3">
                         {pendingRelationReviews.map((relation) => {
                           const isReviewingRelation = reviewingRelationId === relation.id;
+                          const canApproveRelation =
+                            relation.status === "candidate" &&
+                            Boolean(relation.source_evidence) &&
+                            Boolean(relation.target_evidence) &&
+                            ["direct", "partial"].includes(relation.support_status);
 
                           return (
                             <article
@@ -3729,30 +4475,54 @@ export default function App() {
                               <p className="text-sm font-bold text-yellow-100">
                                 {formatRelationType(relation.type, uiLanguage)} → {relation.targetTitle}
                               </p>
-                              <p className="mt-1 text-xs text-slate-400">
-                                {copy.confidence}: {relation.confidence_score ?? copy.notScored}
-                              </p>
+                              <div className="mt-2 flex flex-wrap gap-2 text-[10px] font-bold uppercase tracking-wide">
+                                <span className="rounded-full border border-slate-700 bg-slate-950 px-2 py-1 text-slate-300">
+                                  {formatRelationStatus(relation.status, uiLanguage)}
+                                </span>
+                                <span className="rounded-full border border-slate-700 bg-slate-950 px-2 py-1 text-slate-300">
+                                  {copy.confidence}: {relation.confidence_score ?? copy.notScored}
+                                </span>
+                                <span className="rounded-full border border-slate-700 bg-slate-950 px-2 py-1 text-slate-300">
+                                  {copy.relationSupport}: {formatRelationSupport(
+                                    relation.support_status || "not_checked",
+                                    copy
+                                  )}
+                                </span>
+                              </div>
                               {relation.reason && (
                                 <p className="mt-2 text-sm leading-5 text-slate-300">
                                   {relation.reason}
                                 </p>
                               )}
-                              {relation.evidence && (
-                                <blockquote className="mt-2 border-l-2 border-yellow-400 pl-3 text-sm italic leading-5 text-yellow-50/90">
-                                  “{relation.evidence}”
+                              {relation.source_evidence && (
+                                <blockquote className="mt-2 border-l-2 border-cyan-400 pl-3 text-sm italic leading-5 text-cyan-50/90">
+                                  <span className="mb-1 block text-[10px] font-extrabold uppercase not-italic tracking-wide text-cyan-300">
+                                    {copy.sourceSideEvidence}
+                                  </span>
+                                  “{relation.source_evidence}”
+                                </blockquote>
+                              )}
+                              {relation.target_evidence && (
+                                <blockquote className="mt-2 border-l-2 border-violet-400 pl-3 text-sm italic leading-5 text-violet-50/90">
+                                  <span className="mb-1 block text-[10px] font-extrabold uppercase not-italic tracking-wide text-violet-300">
+                                    {copy.targetSideEvidence}
+                                  </span>
+                                  “{relation.target_evidence}”
                                 </blockquote>
                               )}
                               <div className="mt-3 flex flex-wrap gap-2">
-                                <button
-                                  type="button"
-                                  onClick={() =>
-                                    handleApproveRelation(relation.sourceFindingId, relation.id)
-                                  }
-                                  disabled={isReviewingRelation || !relation.id}
-                                  className="rounded-md bg-emerald-400 px-3 py-1.5 text-xs font-extrabold text-slate-950 transition hover:bg-emerald-300 disabled:cursor-not-allowed disabled:opacity-50"
-                                >
-                                  {isReviewingRelation ? copy.saving : copy.approveEvidence}
-                                </button>
+                                {canApproveRelation && (
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      handleApproveRelation(relation.sourceFindingId, relation.id)
+                                    }
+                                    disabled={isReviewingRelation || !relation.id}
+                                    className="rounded-md bg-emerald-400 px-3 py-1.5 text-xs font-extrabold text-slate-950 transition hover:bg-emerald-300 disabled:cursor-not-allowed disabled:opacity-50"
+                                  >
+                                    {isReviewingRelation ? copy.saving : copy.approveEvidence}
+                                  </button>
+                                )}
                                 <button
                                   type="button"
                                   onClick={() =>
@@ -3796,7 +4566,7 @@ export default function App() {
                         </div>
                         <div className="mt-4 rounded-lg border border-yellow-500/30 bg-slate-950/45 p-3">
                           <p className="text-[10px] font-extrabold uppercase tracking-[0.16em] text-yellow-300">
-                            {copy.proposedHypothesis} · {selectedItem.item.proposed_hypothesis.confidence_score}% {copy.confidence.toLowerCase()}
+                            {copy.proposedHypothesis} · {copy.confidence}: {selectedItem.item.proposed_hypothesis.confidence_score}%
                           </p>
                           <p className="mt-2 font-semibold text-slate-100">
                             {selectedItem.item.proposed_hypothesis.title}
@@ -3808,6 +4578,15 @@ export default function App() {
                       </>
                     )}
                   </section>
+
+                  <details className="rounded-xl border border-slate-700 bg-slate-950/55 p-3">
+                    <summary className="cursor-pointer text-[10px] font-extrabold uppercase tracking-[0.16em] text-slate-400 marker:text-cyan-400">
+                      {copy.rawState}
+                    </summary>
+                    <pre className="mt-3 max-h-56 min-w-0 overflow-auto whitespace-pre-wrap break-words text-xs leading-5 text-cyan-100 [overflow-wrap:anywhere]">
+                      {JSON.stringify(inspectorState, null, 2)}
+                    </pre>
+                  </details>
                 </div>
               )}
             </div>
@@ -3818,7 +4597,7 @@ export default function App() {
         copy={copy}
         isOpen={isIngestModalOpen}
         ingestMode={ingestMode}
-        activeTopicTitle={activeTopic?.title}
+        activeTopic={activeTopic}
         query={query}
         setQuery={setQuery}
         text={text}
@@ -3841,7 +4620,7 @@ export default function App() {
         isExtractingSource={isExtractingSource}
         onExtractFile={handleSourceExtraction}
         isAnalyzing={isAnalyzing}
-        onAnalyze={handleResearch}
+        onAnalyze={ingestMode === "edit" ? handleTopicReframe : handleResearch}
         onClose={() => setIsIngestModalOpen(false)}
         spotlightInputRef={spotlightInputRef}
       />
