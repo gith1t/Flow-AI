@@ -1,7 +1,8 @@
 [CmdletBinding()]
 param(
     [switch]$NoBrowser,
-    [switch]$SkipInstall
+    [switch]$SkipInstall,
+    [switch]$FreshWorkspace
 )
 
 $ErrorActionPreference = "Stop"
@@ -58,6 +59,19 @@ function Wait-ForPort {
     }
 
     throw "$ServiceName did not open port $Port within $TimeoutSeconds seconds. Check log: $LogPath"
+}
+
+function Reset-Workspace {
+    param([string]$BaseUrl)
+
+    Write-Step "Resetting workspace for a clean session"
+    try {
+        Invoke-RestMethod -Method Post -Uri "$BaseUrl/api/workspace/reset" -TimeoutSec 30 | Out-Null
+    }
+    catch {
+        throw "Could not reset the workspace. Check the backend log: $BackendErrorLog"
+    }
+    Write-Host "Workspace reset complete." -ForegroundColor Green
 }
 
 function Stop-ProcessTree {
@@ -163,6 +177,10 @@ try {
     $backendProcess = Start-Process @backendStartArgs
     Wait-ForPort -HostName "127.0.0.1" -Port 8000 -Process $backendProcess -ServiceName "FastAPI" -LogPath $BackendLog -TimeoutSeconds 60
     Write-Host "FastAPI is ready." -ForegroundColor Green
+
+    if ($FreshWorkspace) {
+        Reset-Workspace -BaseUrl "http://127.0.0.1:8000"
+    }
 
     Write-Step "Starting Vite at http://localhost:5173"
     $frontendStartArgs = @{

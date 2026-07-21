@@ -49,6 +49,14 @@ powershell -ExecutionPolicy Bypass -File .\start-flow-ai.ps1
 
 The launcher creates the backend environment, installs missing dependencies, starts FastAPI on `http://localhost:8000`, starts Vite on `http://localhost:5173`, and opens the browser.
 
+For a clean demo session, explicitly reset the local workspace before opening the app:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\start-flow-ai.ps1 -FreshWorkspace
+```
+
+Without `-FreshWorkspace`, existing findings, topics, and Time Travel history are preserved.
+
 Useful options:
 
 ```powershell
