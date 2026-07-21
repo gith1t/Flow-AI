@@ -2,7 +2,7 @@
 
 > An evidence-grounded spatial workspace that turns papers and notes into a traceable research graph.
 
-**OpenAI Build Week track:** Developer Tools
+**OpenAI Build Week 2026 — submission category:** Developer Tools
 **Repository:** [gith1t/Flow-AI](https://github.com/gith1t/Flow-AI)
 
 ## The idea
@@ -93,6 +93,18 @@ The app can extract files without a key. For AI analysis, either paste a session
 
 Session keys are used only for the current browser session and are not written to local storage. Never commit a real key.
 
+## Judge quick start
+
+**Supported platforms:** Windows (one-command launcher), macOS, and Linux (manual two-terminal setup below).
+
+This is a local-first MVP with no hosted instance. The included synthetic source lets judges test the complete interface without private material:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\start-flow-ai.ps1 -FreshWorkspace
+```
+
+Then import [`demo/sample_research.md`](demo/sample_research.md). An OpenAI API key is required only for AI generation of proposals, connections, evidence checks, and Co-Pilot drafts; extraction, the canvas shell, and local workspace reset start without one. A session key can be pasted in Spotlight Ingestion and is never persisted by the app.
+
 ## Fast demo path
 
 1. Start the project.
@@ -110,14 +122,15 @@ Codex was the primary coding agent for the React Flow canvas, FastAPI/Pydantic c
 
 GPT-5.6 (`gpt-5.6-luna`) generates structured findings, confidence scores, topic-fit decisions, layout suggestions, relationship candidates, and Socratic drafts. Human approval remains required before proposals or relationships become part of the verified workspace.
 
-## Devpost checklist
+## OpenAI Build Week submission checklist
 
 The Devpost submission must include:
 
+- the **Developer Tools** category;
 - a public YouTube demo shorter than three minutes, with audio explaining the product and the use of Codex and GPT-5.6;
-- the public repository URL and submitted branch;
+- the public repository URL (or a private repository shared with the addresses specified by Devpost);
 - the Codex Session ID from `/feedback` in the primary build task;
-- an English project description, README, and video narration (or English translation).
+- this README, including setup instructions, sample data, and a clear explanation of how Codex and GPT-5.6 were used.
 
 Keep API keys, private documents, runtime logs, and the Codex Session ID out of Git. The synthetic demo source is included so judges can test the full flow without rebuilding the app.
 
